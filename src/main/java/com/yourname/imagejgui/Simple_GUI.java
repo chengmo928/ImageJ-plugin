@@ -4,7 +4,9 @@ import ij.IJ;
 import ij.ImagePlus;
 import ij.ImageStack;
 import ij.plugin.PlugIn;
+import ij.plugin.filter.RankFilters;
 import ij.process.FloatProcessor;
+import ij.process.ImageProcessor;
 
 import javax.swing.*;
 import java.awt.*;
@@ -14,6 +16,9 @@ public class Simple_GUI implements PlugIn {
 
     private final Font chineseFont = new Font("Microsoft YaHei", Font.PLAIN, 16);
     private final Font titleFont = new Font("Microsoft YaHei", Font.BOLD, 22);
+
+    private JComboBox<String> denoiseMethodBox;
+    private JTextField denoiseParameterField;
 
     @Override
     public void run(String arg) {
@@ -25,7 +30,7 @@ public class Simple_GUI implements PlugIn {
         JFrame frame = new JFrame("My ImageJ GUI Plugin");
 
         frame.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
-        frame.setSize(600, 400);
+        frame.setSize(700, 500);
         frame.setLocationRelativeTo(null);
 
         JLabel title = new JLabel("单颗粒分子识别 GUI Demo", SwingConstants.CENTER);
@@ -33,7 +38,7 @@ public class Simple_GUI implements PlugIn {
 
         JButton generateButton = new JButton("生成测试图像");
         JButton imageButton = new JButton("读取当前图像");
-        JButton denoiseButton = new JButton("降噪测试");
+        JButton denoiseButton = new JButton("执行降噪");
         JButton detectButton = new JButton("识别颗粒");
         JButton trackButton = new JButton("简单追踪");
         JButton closeButton = new JButton("关闭");
@@ -45,38 +50,30 @@ public class Simple_GUI implements PlugIn {
         trackButton.setFont(chineseFont);
         closeButton.setFont(chineseFont);
 
+        denoiseMethodBox = new JComboBox<>(new String[]{
+                "Gaussian Blur 高斯滤波",
+                "Median Filter 中值滤波"
+        });
+        denoiseMethodBox.setFont(chineseFont);
+
+        denoiseParameterField = new JTextField("1.0", 6);
+        denoiseParameterField.setFont(chineseFont);
+
+        JLabel methodLabel = new JLabel("降噪方法：");
+        methodLabel.setFont(chineseFont);
+
+        JLabel parameterLabel = new JLabel("参数：");
+        parameterLabel.setFont(chineseFont);
+
         JTextArea logArea = new JTextArea();
         logArea.setEditable(false);
         logArea.setFont(new Font("Microsoft YaHei", Font.PLAIN, 14));
 
         generateButton.addActionListener(e -> generateTestImage(logArea));
 
-        imageButton.addActionListener(e -> {
-            try {
-                ImagePlus imp = IJ.getImage();
+        imageButton.addActionListener(e -> readCurrentImage(logArea));
 
-                logArea.append("当前图像：" + imp.getTitle() + "\n");
-                logArea.append("宽度：" + imp.getWidth() + "\n");
-                logArea.append("高度：" + imp.getHeight() + "\n");
-                logArea.append("帧数：" + imp.getStackSize() + "\n\n");
-
-            } catch (Exception ex) {
-                logArea.append("请先在 Fiji/ImageJ 中打开一张图像。\n\n");
-            }
-        });
-
-        denoiseButton.addActionListener(e -> {
-            try {
-                ImagePlus imp = IJ.getImage();
-
-                IJ.run(imp, "Gaussian Blur...", "sigma=1");
-
-                logArea.append("已执行 Gaussian Blur 降噪，sigma = 1。\n\n");
-
-            } catch (Exception ex) {
-                logArea.append("请先打开图像，再点击降噪。\n\n");
-            }
-        });
+        denoiseButton.addActionListener(e -> denoiseCurrentImage(logArea));
 
         detectButton.addActionListener(e -> {
             logArea.append("识别颗粒功能将在 v0.4 添加。\n\n");
@@ -88,23 +85,103 @@ public class Simple_GUI implements PlugIn {
 
         closeButton.addActionListener(e -> frame.dispose());
 
-        JPanel buttonPanel = new JPanel();
-        buttonPanel.setLayout(new GridLayout(2, 3, 10, 10));
-        buttonPanel.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
+        JPanel controlPanel = new JPanel();
+        controlPanel.setLayout(new GridLayout(3, 1, 10, 10));
+        controlPanel.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
 
-        buttonPanel.add(generateButton);
-        buttonPanel.add(imageButton);
-        buttonPanel.add(denoiseButton);
-        buttonPanel.add(detectButton);
-        buttonPanel.add(trackButton);
-        buttonPanel.add(closeButton);
+        JPanel row1 = new JPanel();
+        row1.add(generateButton);
+        row1.add(imageButton);
+        row1.add(denoiseButton);
+
+        JPanel row2 = new JPanel();
+        row2.add(methodLabel);
+        row2.add(denoiseMethodBox);
+        row2.add(parameterLabel);
+        row2.add(denoiseParameterField);
+
+        JPanel row3 = new JPanel();
+        row3.add(detectButton);
+        row3.add(trackButton);
+        row3.add(closeButton);
+
+        controlPanel.add(row1);
+        controlPanel.add(row2);
+        controlPanel.add(row3);
 
         frame.setLayout(new BorderLayout());
         frame.add(title, BorderLayout.NORTH);
-        frame.add(buttonPanel, BorderLayout.CENTER);
+        frame.add(controlPanel, BorderLayout.CENTER);
         frame.add(new JScrollPane(logArea), BorderLayout.SOUTH);
 
         frame.setVisible(true);
+    }
+
+    private void readCurrentImage(JTextArea logArea) {
+        try {
+            ImagePlus imp = IJ.getImage();
+
+            logArea.append("当前图像：" + imp.getTitle() + "\n");
+            logArea.append("宽度：" + imp.getWidth() + "\n");
+            logArea.append("高度：" + imp.getHeight() + "\n");
+            logArea.append("切片/帧数：" + imp.getStackSize() + "\n\n");
+
+        } catch (Exception ex) {
+            logArea.append("请先在 Fiji/ImageJ 中打开一张图像。\n\n");
+        }
+    }
+
+    private void denoiseCurrentImage(JTextArea logArea) {
+        try {
+            ImagePlus original = IJ.getImage();
+
+            if (original == null) {
+                logArea.append("没有检测到当前图像，请先打开或生成一张图像。\n\n");
+                return;
+            }
+
+            String method = (String) denoiseMethodBox.getSelectedItem();
+            double parameter = Double.parseDouble(denoiseParameterField.getText());
+
+            if (parameter <= 0) {
+                logArea.append("降噪参数必须大于 0。\n\n");
+                return;
+            }
+
+            ImagePlus denoised = original.duplicate();
+            denoised.setTitle(original.getTitle() + " - Denoised");
+
+            ImageStack stack = denoised.getStack();
+            int totalSlices = stack.getSize();
+
+            for (int s = 1; s <= totalSlices; s++) {
+
+                ImageProcessor ip = stack.getProcessor(s);
+
+                if (method.contains("Gaussian")) {
+                    ip.blurGaussian(parameter);
+                } else if (method.contains("Median")) {
+                    RankFilters rankFilters = new RankFilters();
+                    rankFilters.rank(ip, parameter, RankFilters.MEDIAN);
+                }
+
+                IJ.showProgress(s, totalSlices);
+            }
+
+            denoised.show();
+
+            logArea.append("降噪完成。\n");
+            logArea.append("原始图像：" + original.getTitle() + "\n");
+            logArea.append("降噪方法：" + method + "\n");
+            logArea.append("参数：" + parameter + "\n");
+            logArea.append("处理帧数：" + totalSlices + "\n");
+            logArea.append("已生成新图像：" + denoised.getTitle() + "\n\n");
+
+        } catch (NumberFormatException ex) {
+            logArea.append("参数输入错误，请输入数字，例如 1.0 或 2.0。\n\n");
+        } catch (Exception ex) {
+            logArea.append("降噪失败：" + ex.getMessage() + "\n\n");
+        }
     }
 
     private void generateTestImage(JTextArea logArea) {
@@ -117,7 +194,7 @@ public class Simple_GUI implements PlugIn {
         double sigma = 2.0;
         double amplitude = 180.0;
         double background = 20.0;
-        double noiseLevel = 5.0;
+        double noiseLevel = 8.0;
 
         Random random = new Random(12345);
 
