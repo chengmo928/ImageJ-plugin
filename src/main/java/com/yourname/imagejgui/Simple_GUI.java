@@ -508,7 +508,7 @@ public class Simple_GUI implements PlugIn {
 
                     line.setStrokeColor(Color.GREEN);
                     line.setStrokeWidth(2);
-                    line.setPosition(current.frame);
+                    line.setPosition(0);
 
                     overlay.add(line);
                 }
