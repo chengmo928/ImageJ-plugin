@@ -13,6 +13,8 @@ import ij.process.FloatProcessor;
 import ij.process.ImageProcessor;
 
 import javax.swing.*;
+import java.io.File;
+import java.io.PrintWriter;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Font;
@@ -41,6 +43,8 @@ public class Simple_GUI implements PlugIn {
     private JTextField trackingMaxDistanceField;
 
     private final List<Detection> lastDetections = new ArrayList<>();
+    private final List<Track> lastTracks = new ArrayList<>();
+
 
     @Override
     public void run(String arg) {
@@ -63,6 +67,7 @@ public class Simple_GUI implements PlugIn {
         JButton denoiseButton = new JButton("执行降噪");
         JButton detectButton = new JButton("识别颗粒");
         JButton trackButton = new JButton("简单追踪");
+        JButton exportButton = new JButton("导出结果");
         JButton closeButton = new JButton("关闭");
 
         generateButton.setFont(chineseFont);
@@ -70,6 +75,7 @@ public class Simple_GUI implements PlugIn {
         denoiseButton.setFont(chineseFont);
         detectButton.setFont(chineseFont);
         trackButton.setFont(chineseFont);
+        exportButton.setFont(chineseFont);
         closeButton.setFont(chineseFont);
 
         denoiseMethodBox = new JComboBox<>(new String[]{
@@ -120,6 +126,8 @@ public class Simple_GUI implements PlugIn {
 
         trackButton.addActionListener(e -> trackParticles(logArea));
 
+        exportButton.addActionListener(e -> exportTracksToCSV(logArea));
+
         closeButton.addActionListener(e -> frame.dispose());
 
         JPanel controlPanel = new JPanel();
@@ -149,6 +157,7 @@ public class Simple_GUI implements PlugIn {
 
         JPanel row4 = new JPanel();
         row4.add(detectButton);
+        row4.add(exportButton);
         row4.add(trackButton);
         row4.add(closeButton);
 
@@ -517,6 +526,9 @@ public class Simple_GUI implements PlugIn {
             imp.setOverlay(overlay);
             trackTable.show("Track Results");
 
+            lastTracks.clear();
+            lastTracks.addAll(allTracks);
+
             logArea.append("简单追踪完成。\n");
             logArea.append("识别点总数：" + lastDetections.size() + "\n");
             logArea.append("追踪最大距离：" + maxLinkDistance + "\n");
@@ -528,6 +540,64 @@ public class Simple_GUI implements PlugIn {
             logArea.append("追踪参数输入错误，请输入数字，例如 10。\n\n");
         } catch (Exception ex) {
             logArea.append("追踪失败：" + ex.getMessage() + "\n\n");
+        }
+    }
+
+    private void exportTracksToCSV(JTextArea logArea) {
+        try {
+            if (lastTracks.isEmpty()) {
+                logArea.append("还没有追踪结果，请先点击“简单追踪”。\n\n");
+                return;
+            }
+
+            JFileChooser fileChooser = new JFileChooser();
+            fileChooser.setDialogTitle("保存追踪结果 CSV");
+            fileChooser.setSelectedFile(new File("track_results.csv"));
+
+            int userSelection = fileChooser.showSaveDialog(null);
+
+            if (userSelection != JFileChooser.APPROVE_OPTION) {
+                logArea.append("已取消导出。\n\n");
+                return;
+            }
+
+            File fileToSave = fileChooser.getSelectedFile();
+
+            String filePath = fileToSave.getAbsolutePath();
+
+            if (!filePath.toLowerCase().endsWith(".csv")) {
+                fileToSave = new File(filePath + ".csv");
+            }
+
+            PrintWriter writer = new PrintWriter(fileToSave, "UTF-8");
+
+            writer.println("Track_ID,Frame,X,Y,Intensity");
+
+            int rowCount = 0;
+
+            for (Track track : lastTracks) {
+                for (Detection detection : track.detections) {
+                    writer.println(
+                            track.id + "," +
+                                    detection.frame + "," +
+                                    detection.x + "," +
+                                    detection.y + "," +
+                                    detection.intensity
+                    );
+
+                    rowCount++;
+                }
+            }
+
+            writer.close();
+
+            logArea.append("导出完成。\n");
+            logArea.append("保存路径：" + fileToSave.getAbsolutePath() + "\n");
+            logArea.append("导出轨迹数量：" + lastTracks.size() + "\n");
+            logArea.append("导出数据行数：" + rowCount + "\n\n");
+
+        } catch (Exception ex) {
+            logArea.append("导出失败：" + ex.getMessage() + "\n\n");
         }
     }
     private List<Detection> findLocalMaxima(
