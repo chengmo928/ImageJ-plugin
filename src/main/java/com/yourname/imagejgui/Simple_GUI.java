@@ -56,7 +56,7 @@ public class Simple_GUI implements PlugIn {
         JFrame frame = new JFrame("My ImageJ GUI Plugin");
 
         frame.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
-        frame.setSize(800, 600);
+        frame.setSize(1100, 700);
         frame.setLocationRelativeTo(null);
 
         JLabel title = new JLabel("单颗粒分子识别 GUI Demo", SwingConstants.CENTER);
@@ -67,6 +67,7 @@ public class Simple_GUI implements PlugIn {
         JButton denoiseButton = new JButton("执行降噪");
         JButton detectButton = new JButton("识别颗粒");
         JButton trackButton = new JButton("简单追踪");
+        JButton analyzeButton = new JButton("轨迹统计");
         JButton exportButton = new JButton("导出结果");
         JButton closeButton = new JButton("关闭");
 
@@ -75,6 +76,7 @@ public class Simple_GUI implements PlugIn {
         denoiseButton.setFont(chineseFont);
         detectButton.setFont(chineseFont);
         trackButton.setFont(chineseFont);
+        analyzeButton.setFont(chineseFont);
         exportButton.setFont(chineseFont);
         closeButton.setFont(chineseFont);
 
@@ -126,6 +128,8 @@ public class Simple_GUI implements PlugIn {
 
         trackButton.addActionListener(e -> trackParticles(logArea));
 
+        analyzeButton.addActionListener(e -> analyzeTracks(logArea));
+
         exportButton.addActionListener(e -> exportTracksToCSV(logArea));
 
         closeButton.addActionListener(e -> frame.dispose());
@@ -157,6 +161,7 @@ public class Simple_GUI implements PlugIn {
 
         JPanel row4 = new JPanel();
         row4.add(detectButton);
+        row4.add(analyzeButton);
         row4.add(exportButton);
         row4.add(trackButton);
         row4.add(closeButton);
@@ -543,6 +548,99 @@ public class Simple_GUI implements PlugIn {
         }
     }
 
+    private void analyzeTracks(JTextArea logArea) {
+        try {
+            if (lastTracks.isEmpty()) {
+                logArea.append("还没有追踪结果，请先点击“简单追踪”。\n\n");
+                return;
+            }
+
+            ResultsTable summaryTable = new ResultsTable();
+
+            for (Track track : lastTracks) {
+
+                List<Detection> points = track.detections;
+
+                if (points.isEmpty()) {
+                    continue;
+                }
+
+                points.sort(Comparator.comparingInt(d -> d.frame));
+
+                Detection first = points.get(0);
+                Detection last = points.get(points.size() - 1);
+
+                int startFrame = first.frame;
+                int endFrame = last.frame;
+                int numberOfPoints = points.size();
+                int duration = endFrame - startFrame + 1;
+
+                double displacement = distance(
+                        first.x,
+                        first.y,
+                        last.x,
+                        last.y
+                );
+
+                double pathLength = 0.0;
+                double intensitySum = 0.0;
+
+                for (Detection detection : points) {
+                    intensitySum += detection.intensity;
+                }
+
+                for (int i = 1; i < points.size(); i++) {
+                    Detection previous = points.get(i - 1);
+                    Detection current = points.get(i);
+
+                    pathLength += distance(
+                            previous.x,
+                            previous.y,
+                            current.x,
+                            current.y
+                    );
+                }
+
+                double meanIntensity = intensitySum / numberOfPoints;
+
+                double meanStep = 0.0;
+                if (numberOfPoints > 1) {
+                    meanStep = pathLength / (numberOfPoints - 1);
+                }
+
+                double meanSpeed = 0.0;
+                if (duration > 1) {
+                    meanSpeed = pathLength / (duration - 1);
+                }
+
+                summaryTable.incrementCounter();
+                summaryTable.addValue("Track_ID", track.id);
+                summaryTable.addValue("Start_Frame", startFrame);
+                summaryTable.addValue("End_Frame", endFrame);
+                summaryTable.addValue("N_Points", numberOfPoints);
+                summaryTable.addValue("Duration_Frames", duration);
+                summaryTable.addValue("Start_X", first.x);
+                summaryTable.addValue("Start_Y", first.y);
+                summaryTable.addValue("End_X", last.x);
+                summaryTable.addValue("End_Y", last.y);
+                summaryTable.addValue("Displacement", displacement);
+                summaryTable.addValue("Path_Length", pathLength);
+                summaryTable.addValue("Mean_Step", meanStep);
+                summaryTable.addValue("Mean_Speed_px_per_frame", meanSpeed);
+                summaryTable.addValue("Mean_Intensity", meanIntensity);
+            }
+
+            summaryTable.show("Track Summary");
+
+            logArea.append("轨迹统计完成。\n");
+            logArea.append("轨迹数量：" + lastTracks.size() + "\n");
+            logArea.append("结果已显示在 Track Summary 表格中。\n");
+            logArea.append("统计指标包括：轨迹长度、净位移、路径长度、平均步长、平均速度、平均强度。\n\n");
+
+        } catch (Exception ex) {
+            logArea.append("轨迹统计失败：" + ex.getMessage() + "\n\n");
+        }
+    }
     private void exportTracksToCSV(JTextArea logArea) {
         try {
             if (lastTracks.isEmpty()) {
