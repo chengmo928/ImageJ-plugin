@@ -56,7 +56,7 @@ public class Simple_GUI implements PlugIn {
         JFrame frame = new JFrame("My ImageJ GUI Plugin");
 
         frame.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
-        frame.setSize(1100, 700);
+        frame.setSize(1200, 700);
         frame.setLocationRelativeTo(null);
 
         JLabel title = new JLabel("单颗粒分子识别 GUI Demo", SwingConstants.CENTER);
@@ -68,6 +68,7 @@ public class Simple_GUI implements PlugIn {
         JButton detectButton = new JButton("识别颗粒");
         JButton trackButton = new JButton("简单追踪");
         JButton analyzeButton = new JButton("轨迹统计");
+        JButton msdButton = new JButton("计算 MSD");
         JButton exportButton = new JButton("导出结果");
         JButton closeButton = new JButton("关闭");
 
@@ -77,6 +78,7 @@ public class Simple_GUI implements PlugIn {
         detectButton.setFont(chineseFont);
         trackButton.setFont(chineseFont);
         analyzeButton.setFont(chineseFont);
+        msdButton.setFont(chineseFont);
         exportButton.setFont(chineseFont);
         closeButton.setFont(chineseFont);
 
@@ -130,6 +132,8 @@ public class Simple_GUI implements PlugIn {
 
         analyzeButton.addActionListener(e -> analyzeTracks(logArea));
 
+        msdButton.addActionListener(e -> calculateMSD(logArea));
+
         exportButton.addActionListener(e -> exportTracksToCSV(logArea));
 
         closeButton.addActionListener(e -> frame.dispose());
@@ -162,6 +166,7 @@ public class Simple_GUI implements PlugIn {
         JPanel row4 = new JPanel();
         row4.add(detectButton);
         row4.add(analyzeButton);
+        row4.add(msdButton);
         row4.add(exportButton);
         row4.add(trackButton);
         row4.add(closeButton);
@@ -639,6 +644,103 @@ public class Simple_GUI implements PlugIn {
 
         } catch (Exception ex) {
             logArea.append("轨迹统计失败：" + ex.getMessage() + "\n\n");
+        }
+    }
+    private void calculateMSD(JTextArea logArea) {
+        try {
+            if (lastTracks.isEmpty()) {
+                logArea.append("还没有追踪结果，请先点击“简单追踪”。\n\n");
+                return;
+            }
+
+            ResultsTable msdTable = new ResultsTable();
+            ResultsTable ensembleTable = new ResultsTable();
+
+            Map<Integer, Double> ensembleSumByLag = new HashMap<>();
+            Map<Integer, Integer> ensembleCountByLag = new HashMap<>();
+
+            int totalMSDRows = 0;
+
+            for (Track track : lastTracks) {
+
+                List<Detection> points = track.detections;
+
+                if (points.size() < 2) {
+                    continue;
+                }
+
+                points.sort(Comparator.comparingInt(d -> d.frame));
+
+                int maxLag = points.size() - 1;
+
+                for (int lag = 1; lag <= maxLag; lag++) {
+
+                    double sumSquaredDisplacement = 0.0;
+                    int pairCount = 0;
+
+                    for (int i = 0; i < points.size() - lag; i++) {
+
+                        Detection p1 = points.get(i);
+                        Detection p2 = points.get(i + lag);
+
+                        double dx = p2.x - p1.x;
+                        double dy = p2.y - p1.y;
+
+                        double squaredDisplacement = dx * dx + dy * dy;
+
+                        sumSquaredDisplacement += squaredDisplacement;
+                        pairCount++;
+
+                        ensembleSumByLag.put(
+                                lag,
+                                ensembleSumByLag.getOrDefault(lag, 0.0) + squaredDisplacement
+                        );
+
+                        ensembleCountByLag.put(
+                                lag,
+                                ensembleCountByLag.getOrDefault(lag, 0) + 1
+                        );
+                    }
+
+                    if (pairCount > 0) {
+                        double msd = sumSquaredDisplacement / pairCount;
+
+                        msdTable.incrementCounter();
+                        msdTable.addValue("Track_ID", track.id);
+                        msdTable.addValue("Lag_Frames", lag);
+                        msdTable.addValue("MSD_px2", msd);
+                        msdTable.addValue("N_Pairs", pairCount);
+
+                        totalMSDRows++;
+                    }
+                }
+            }
+
+            for (Integer lag : ensembleSumByLag.keySet()) {
+                double sum = ensembleSumByLag.get(lag);
+                int count = ensembleCountByLag.get(lag);
+
+                if (count > 0) {
+                    double ensembleMSD = sum / count;
+
+                    ensembleTable.incrementCounter();
+                    ensembleTable.addValue("Lag_Frames", lag);
+                    ensembleTable.addValue("Ensemble_MSD_px2", ensembleMSD);
+                    ensembleTable.addValue("N_Pairs", count);
+                }
+            }
+
+            msdTable.show("MSD Results");
+            ensembleTable.show("MSD Ensemble");
+
+            logArea.append("MSD 计算完成。\n");
+            logArea.append("轨迹数量：" + lastTracks.size() + "\n");
+            logArea.append("MSD 结果行数：" + totalMSDRows + "\n");
+            logArea.append("已生成 MSD Results 表格：每条轨迹的 MSD。\n");
+            logArea.append("已生成 MSD Ensemble 表格：所有轨迹的平均 MSD。\n\n");
+
+        } catch (Exception ex) {
+            logArea.append("MSD 计算失败：" + ex.getMessage() + "\n\n");
         }
     }
     private void exportTracksToCSV(JTextArea logArea) {
