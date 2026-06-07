@@ -37,6 +37,8 @@ public class Simple_GUI implements PlugIn {
     private JComboBox<String> denoiseMethodBox;
     private JTextField denoiseParameterField;
 
+    private JComboBox<String> detectionMethodBox;
+
     private JTextField detectionThresholdField;
     private JTextField localMaxRadiusField;
     private JTextField minDistanceField;
@@ -56,7 +58,7 @@ public class Simple_GUI implements PlugIn {
         JFrame frame = new JFrame("My ImageJ GUI Plugin");
 
         frame.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
-        frame.setSize(1200, 700);
+        frame.setSize(1300, 750);
         frame.setLocationRelativeTo(null);
 
         JLabel title = new JLabel("单颗粒分子识别 GUI Demo", SwingConstants.CENTER);
@@ -91,6 +93,11 @@ public class Simple_GUI implements PlugIn {
         denoiseParameterField = new JTextField("1.0", 6);
         denoiseParameterField.setFont(chineseFont);
 
+        detectionMethodBox = new JComboBox<>(new String[]{
+                "Local Maximum 局部极大值",
+                "Centroid 质心定位"
+        });
+        detectionMethodBox.setFont(chineseFont);
         detectionThresholdField = new JTextField("80", 6);
         detectionThresholdField.setFont(chineseFont);
 
@@ -104,6 +111,7 @@ public class Simple_GUI implements PlugIn {
 
         JLabel denoiseMethodLabel = new JLabel("降噪方法：");
         JLabel denoiseParameterLabel = new JLabel("降噪参数：");
+        JLabel detectionMethodLabel = new JLabel("识别方法：");
         JLabel thresholdLabel = new JLabel("识别阈值：");
         JLabel radiusLabel = new JLabel("局部极大半径：");
         JLabel minDistanceLabel = new JLabel("最小距离：");
@@ -111,6 +119,7 @@ public class Simple_GUI implements PlugIn {
 
         denoiseMethodLabel.setFont(chineseFont);
         denoiseParameterLabel.setFont(chineseFont);
+        detectionMethodLabel.setFont(chineseFont);
         thresholdLabel.setFont(chineseFont);
         radiusLabel.setFont(chineseFont);
         minDistanceLabel.setFont(chineseFont);
@@ -154,6 +163,8 @@ public class Simple_GUI implements PlugIn {
         row2.add(denoiseParameterField);
 
         JPanel row3 = new JPanel();
+        row3.add(detectionMethodLabel);
+        row3.add(detectionMethodBox);
         row3.add(thresholdLabel);
         row3.add(detectionThresholdField);
         row3.add(radiusLabel);
@@ -165,10 +176,10 @@ public class Simple_GUI implements PlugIn {
 
         JPanel row4 = new JPanel();
         row4.add(detectButton);
+        row4.add(trackButton);
         row4.add(analyzeButton);
         row4.add(msdButton);
         row4.add(exportButton);
-        row4.add(trackButton);
         row4.add(closeButton);
 
         controlPanel.add(row1);
@@ -268,6 +279,7 @@ public class Simple_GUI implements PlugIn {
             double threshold = Double.parseDouble(detectionThresholdField.getText());
             int localRadius = Integer.parseInt(localMaxRadiusField.getText());
             double minDistance = Double.parseDouble(minDistanceField.getText());
+            String detectionMethod = (String) detectionMethodBox.getSelectedItem();
 
             if (threshold <= 0) {
                 logArea.append("识别阈值必须大于 0。\n\n");
@@ -297,12 +309,22 @@ public class Simple_GUI implements PlugIn {
                 ImageProcessor ip = stack.getProcessor(frame);
                 FloatProcessor fp = ip.convertToFloatProcessor();
 
-                List<Detection> candidates = findLocalMaxima(
-                        fp,
-                        frame,
-                        threshold,
-                        localRadius
-                );
+                List<Detection> candidates;
+
+                if (detectionMethod.contains("Centroid")) {
+                    candidates = findCentroidDetections(
+                            fp,
+                            frame,
+                            threshold
+                    );
+                } else {
+                    candidates = findLocalMaxima(
+                            fp,
+                            frame,
+                            threshold,
+                            localRadius
+                    );
+                }
 
                 candidates.sort(
                         Comparator.comparingDouble((Detection d) -> d.intensity).reversed()
@@ -359,6 +381,7 @@ public class Simple_GUI implements PlugIn {
 
             logArea.append("颗粒识别完成。\n");
             logArea.append("图像：" + imp.getTitle() + "\n");
+            logArea.append("识别方法：" + detectionMethod + "\n");
             logArea.append("识别阈值：" + threshold + "\n");
             logArea.append("局部极大半径：" + localRadius + "\n");
             logArea.append("最小距离：" + minDistance + "\n");
@@ -798,6 +821,139 @@ public class Simple_GUI implements PlugIn {
 
         } catch (Exception ex) {
             logArea.append("导出失败：" + ex.getMessage() + "\n\n");
+        }
+    }
+    private List<Detection> findCentroidDetections(
+            FloatProcessor fp,
+            int frame,
+            double threshold
+    ) {
+        List<Detection> detections = new ArrayList<>();
+
+        int width = fp.getWidth();
+        int height = fp.getHeight();
+
+        boolean[][] visited = new boolean[width][height];
+
+        for (int y = 1; y < height - 1; y++) {
+            for (int x = 1; x < width - 1; x++) {
+
+                if (visited[x][y]) {
+                    continue;
+                }
+
+                float value = fp.getf(x, y);
+
+                if (value < threshold) {
+                    continue;
+                }
+
+                List<int[]> regionPixels = new ArrayList<>();
+                floodFillRegion(
+                        fp,
+                        x,
+                        y,
+                        threshold,
+                        visited,
+                        regionPixels
+                );
+
+                if (regionPixels.isEmpty()) {
+                    continue;
+                }
+
+                double sumIntensity = 0.0;
+                double weightedX = 0.0;
+                double weightedY = 0.0;
+                double maxIntensity = 0.0;
+
+                for (int[] pixel : regionPixels) {
+                    int px = pixel[0];
+                    int py = pixel[1];
+
+                    double intensity = fp.getf(px, py);
+
+                    sumIntensity += intensity;
+                    weightedX += px * intensity;
+                    weightedY += py * intensity;
+
+                    if (intensity > maxIntensity) {
+                        maxIntensity = intensity;
+                    }
+                }
+
+                if (sumIntensity <= 0) {
+                    continue;
+                }
+
+                double centroidX = weightedX / sumIntensity;
+                double centroidY = weightedY / sumIntensity;
+
+                detections.add(
+                        new Detection(
+                                frame,
+                                centroidX,
+                                centroidY,
+                                maxIntensity
+                        )
+                );
+            }
+        }
+
+        return detections;
+    }
+    private void floodFillRegion(
+            FloatProcessor fp,
+            int startX,
+            int startY,
+            double threshold,
+            boolean[][] visited,
+            List<int[]> regionPixels
+    ) {
+        int width = fp.getWidth();
+        int height = fp.getHeight();
+
+        List<int[]> queue = new ArrayList<>();
+        queue.add(new int[]{startX, startY});
+        visited[startX][startY] = true;
+
+        int index = 0;
+
+        while (index < queue.size()) {
+            int[] current = queue.get(index);
+            index++;
+
+            int x = current[0];
+            int y = current[1];
+
+            regionPixels.add(new int[]{x, y});
+
+            int[][] neighbors = new int[][]{
+                    {x + 1, y},
+                    {x - 1, y},
+                    {x, y + 1},
+                    {x, y - 1}
+            };
+
+            for (int[] neighbor : neighbors) {
+                int nx = neighbor[0];
+                int ny = neighbor[1];
+
+                if (nx < 0 || nx >= width || ny < 0 || ny >= height) {
+                    continue;
+                }
+
+                if (visited[nx][ny]) {
+                    continue;
+                }
+
+                if (fp.getf(nx, ny) < threshold) {
+                    continue;
+                }
+
+                visited[nx][ny] = true;
+                queue.add(new int[]{nx, ny});
+            }
         }
     }
     private List<Detection> findLocalMaxima(
