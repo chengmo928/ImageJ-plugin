@@ -3,6 +3,8 @@ package com.yourname.imagejgui;
 import ij.IJ;
 import ij.ImagePlus;
 import ij.ImageStack;
+import ij.io.DirectoryChooser;
+import ij.plugin.FolderOpener;
 import ij.gui.Overlay;
 import ij.gui.Line;
 import ij.gui.OvalRoi;
@@ -13,7 +15,9 @@ import ij.process.FloatProcessor;
 import ij.process.ImageProcessor;
 
 import javax.swing.*;
+import java.io.BufferedReader;
 import java.io.File;
+import java.io.FileReader;
 import java.io.PrintWriter;
 import java.awt.BorderLayout;
 import java.awt.Color;
@@ -38,6 +42,8 @@ public class Simple_GUI implements PlugIn {
     private JTextField denoiseParameterField;
 
     private JComboBox<String> detectionMethodBox;
+    private JComboBox<String> exportTypeBox;
+    private JCheckBox invertSequenceCheckBox;
 
     private JTextField detectionThresholdField;
     private JTextField localMaxRadiusField;
@@ -65,25 +71,39 @@ public class Simple_GUI implements PlugIn {
         title.setFont(titleFont);
 
         JButton generateButton = new JButton("生成测试图像");
+        JButton importSequenceButton = new JButton("导入图像序列");
         JButton imageButton = new JButton("检查当前图像");
+        JButton importCSVButton = new JButton("导入CSV轨迹");
         JButton denoiseButton = new JButton("执行降噪");
         JButton detectButton = new JButton("识别颗粒");
         JButton trackButton = new JButton("简单追踪");
         JButton analyzeButton = new JButton("轨迹统计");
         JButton msdButton = new JButton("计算 MSD");
+        JButton plotMSDButton = new JButton("绘制MSD");
+        JButton diffusionButton = new JButton("计算扩散系数D");
         JButton exportButton = new JButton("导出结果");
         JButton closeButton = new JButton("关闭");
 
         generateButton.setFont(chineseFont);
+        importSequenceButton.setFont(chineseFont);
+        imageButton.setFont(chineseFont);
+        importCSVButton.setFont(chineseFont);
         imageButton.setFont(chineseFont);
         denoiseButton.setFont(chineseFont);
         detectButton.setFont(chineseFont);
         trackButton.setFont(chineseFont);
         analyzeButton.setFont(chineseFont);
         msdButton.setFont(chineseFont);
+        plotMSDButton.setFont(chineseFont);
+        diffusionButton.setFont(chineseFont);
         exportButton.setFont(chineseFont);
         closeButton.setFont(chineseFont);
 
+        invertSequenceCheckBox = new JCheckBox(
+                "导入时反相（适用于暗颗粒）",
+                true
+        );
+        invertSequenceCheckBox.setFont(chineseFont);
         denoiseMethodBox = new JComboBox<>(new String[]{
                 "Gaussian Blur 高斯滤波",
                 "Median Filter 中值滤波"
@@ -98,6 +118,13 @@ public class Simple_GUI implements PlugIn {
                 "Centroid 质心定位"
         });
         detectionMethodBox.setFont(chineseFont);
+        exportTypeBox = new JComboBox<>(new String[]{
+                "Track Results 轨迹坐标",
+                "Track Summary 轨迹统计",
+                "MSD Results MSD结果",
+                "Ensemble MSD 总体平均MSD"
+        });
+        exportTypeBox.setFont(chineseFont);
         detectionThresholdField = new JTextField("80", 6);
         detectionThresholdField.setFont(chineseFont);
 
@@ -116,10 +143,12 @@ public class Simple_GUI implements PlugIn {
         JLabel radiusLabel = new JLabel("局部极大半径：");
         JLabel minDistanceLabel = new JLabel("最小距离：");
         JLabel trackingDistanceLabel = new JLabel("追踪最大距离：");
+        JLabel exportTypeLabel = new JLabel("导出类型：");
 
         denoiseMethodLabel.setFont(chineseFont);
         denoiseParameterLabel.setFont(chineseFont);
         detectionMethodLabel.setFont(chineseFont);
+        exportTypeLabel.setFont(chineseFont);
         thresholdLabel.setFont(chineseFont);
         radiusLabel.setFont(chineseFont);
         minDistanceLabel.setFont(chineseFont);
@@ -131,7 +160,11 @@ public class Simple_GUI implements PlugIn {
 
         generateButton.addActionListener(e -> generateTestImage(logArea));
 
+        importSequenceButton.addActionListener(e -> importImageSequence(logArea));
+
         imageButton.addActionListener(e -> readCurrentImage(logArea));
+
+        importCSVButton.addActionListener(e -> importTrackingCSV(logArea));
 
         denoiseButton.addActionListener(e -> denoiseCurrentImage(logArea));
 
@@ -139,22 +172,34 @@ public class Simple_GUI implements PlugIn {
 
         trackButton.addActionListener(e -> trackParticles(logArea));
 
+        plotMSDButton.addActionListener(e -> plotMSD(logArea));
+
         analyzeButton.addActionListener(e -> analyzeTracks(logArea));
 
         msdButton.addActionListener(e -> calculateMSD(logArea));
 
-        exportButton.addActionListener(e -> exportTracksToCSV(logArea));
+        diffusionButton.addActionListener(e -> calculateDiffusionCoefficient(logArea));
+
+        exportButton.addActionListener(e -> exportSelectedResults(logArea));
 
         closeButton.addActionListener(e -> frame.dispose());
 
         JPanel controlPanel = new JPanel();
-        controlPanel.setLayout(new GridLayout(4, 1, 10, 10));
+        controlPanel.setLayout(new GridLayout(6, 1, 10, 10));
         controlPanel.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
 
         JPanel row1 = new JPanel();
         row1.add(generateButton);
+        row1.add(importSequenceButton);
         row1.add(imageButton);
+        row1.add(importCSVButton);
         row1.add(denoiseButton);
+        row1.add(invertSequenceCheckBox);
+
+        JPanel importRow = new JPanel();
+        importRow.add(importSequenceButton);
+        importRow.add(importCSVButton);
+        importRow.add(invertSequenceCheckBox);
 
         JPanel row2 = new JPanel();
         row2.add(denoiseMethodLabel);
@@ -179,13 +224,22 @@ public class Simple_GUI implements PlugIn {
         row4.add(trackButton);
         row4.add(analyzeButton);
         row4.add(msdButton);
+        row4.add(plotMSDButton);
+        row4.add(diffusionButton);
         row4.add(exportButton);
         row4.add(closeButton);
 
+        JPanel row5 = new JPanel();
+        row5.add(exportTypeLabel);
+        row5.add(exportTypeBox);
+
+
         controlPanel.add(row1);
+        controlPanel.add(importRow);
         controlPanel.add(row2);
         controlPanel.add(row3);
         controlPanel.add(row4);
+        controlPanel.add(row5);
 
         frame.setLayout(new BorderLayout());
         frame.add(title, BorderLayout.NORTH);
@@ -198,6 +252,114 @@ public class Simple_GUI implements PlugIn {
         frame.add(logScrollPane, BorderLayout.SOUTH);
 
         frame.setVisible(true);
+    }
+
+    private void importImageSequence(JTextArea logArea) {
+        try {
+            DirectoryChooser directoryChooser =
+                    new DirectoryChooser("选择 bulk_water 图像序列文件夹");
+
+            String directory = directoryChooser.getDirectory();
+
+            if (directory == null) {
+                logArea.append("已取消导入图像序列。\n\n");
+                return;
+            }
+
+            ImagePlus sourceSequence = FolderOpener.open(directory);
+
+            if (sourceSequence == null
+                    || sourceSequence.getStackSize() == 0) {
+
+                logArea.append("没有从所选文件夹读取到图像。\n\n");
+                return;
+            }
+
+            ImageStack sourceStack = sourceSequence.getStack();
+
+            int width = sourceSequence.getWidth();
+            int height = sourceSequence.getHeight();
+            int totalFrames = sourceStack.getSize();
+
+            ImageStack preparedStack = new ImageStack(width, height);
+
+            boolean invertImage = invertSequenceCheckBox.isSelected();
+
+            for (int frame = 1; frame <= totalFrames; frame++) {
+
+                ImageProcessor sourceProcessor =
+                        sourceStack.getProcessor(frame);
+
+                /*
+                 * 转成8位灰度。
+                 * false 表示不要对每一帧单独进行强度拉伸，
+                 * 避免不同帧被分别归一化。
+                 */
+                ImageProcessor preparedProcessor =
+                        sourceProcessor.convertToByteProcessor(false);
+
+                if (invertImage) {
+                    preparedProcessor.invert();
+                }
+
+                String sliceLabel = sourceStack.getSliceLabel(frame);
+
+                preparedStack.addSlice(
+                        sliceLabel,
+                        preparedProcessor
+                );
+
+                IJ.showProgress(frame, totalFrames);
+            }
+
+            ImagePlus preparedSequence = new ImagePlus(
+                    "Bulk Water - Prepared",
+                    preparedStack
+            );
+
+            preparedSequence.setDimensions(
+                    1,
+                    1,
+                    totalFrames
+            );
+
+            preparedSequence.setOpenAsHyperStack(true);
+            preparedSequence.setDisplayRange(0, 255);
+            preparedSequence.show();
+
+            /*
+             * 导入新数据后，清空之前图像产生的检测和追踪结果，
+             * 避免旧结果被错误用于新图像。
+             */
+            lastDetections.clear();
+            lastTracks.clear();
+
+            logArea.append("图像序列导入完成。\n");
+            logArea.append("文件夹：" + directory + "\n");
+            logArea.append("图像名称："
+                    + preparedSequence.getTitle() + "\n");
+            logArea.append("宽度：" + width + "\n");
+            logArea.append("高度：" + height + "\n");
+            logArea.append("帧数：" + totalFrames + "\n");
+            logArea.append(
+                    "导入时反相：" +
+                            (invertImage ? "是" : "否") +
+                            "\n"
+            );
+            logArea.append(
+                    "之前的识别和追踪结果已清空。\n"
+            );
+            logArea.append(
+                    "下一步可点击：检查当前图像 → 执行降噪 → 识别颗粒。\n\n"
+            );
+
+        } catch (Exception ex) {
+            logArea.append(
+                    "图像序列导入失败：" +
+                            ex.getMessage() +
+                            "\n\n"
+            );
+        }
     }
 
     private void readCurrentImage(JTextArea logArea) {
@@ -214,6 +376,205 @@ public class Simple_GUI implements PlugIn {
         }
     }
 
+    private void importTrackingCSV(JTextArea logArea) {
+        JFileChooser fileChooser = new JFileChooser();
+        fileChooser.setDialogTitle("选择外部追踪 CSV 文件");
+
+        int userSelection = fileChooser.showOpenDialog(null);
+
+        if (userSelection != JFileChooser.APPROVE_OPTION) {
+            logArea.append("已取消导入。\n\n");
+            return;
+        }
+
+        File csvFile = fileChooser.getSelectedFile();
+
+        Map<Integer, Track> importedTrackMap = new HashMap<>();
+        List<Detection> importedDetections = new ArrayList<>();
+
+        int importedRows = 0;
+
+        try (BufferedReader reader = new BufferedReader(new FileReader(csvFile))) {
+
+            String headerLine = reader.readLine();
+
+            if (headerLine == null || headerLine.trim().isEmpty()) {
+                logArea.append("CSV 文件为空。\n\n");
+                return;
+            }
+
+            String[] headers = headerLine.split(",");
+
+            Map<String, Integer> columnMap = new HashMap<>();
+
+            for (int i = 0; i < headers.length; i++) {
+                String normalizedHeader = headers[i]
+                        .trim()
+                        .replace("\"", "")
+                        .toLowerCase();
+
+                columnMap.put(normalizedHeader, i);
+            }
+
+            if (!columnMap.containsKey("particle")
+                    || !columnMap.containsKey("frame")
+                    || !columnMap.containsKey("x")
+                    || !columnMap.containsKey("y")) {
+
+                logArea.append(
+                        "CSV 缺少必须列。\n" +
+                                "必须包含：particle、frame、x、y\n\n"
+                );
+                return;
+            }
+
+            int particleColumn = columnMap.get("particle");
+            int frameColumn = columnMap.get("frame");
+            int xColumn = columnMap.get("x");
+            int yColumn = columnMap.get("y");
+
+            Integer intensityColumn = null;
+
+            if (columnMap.containsKey("intensity")) {
+                intensityColumn = columnMap.get("intensity");
+            } else if (columnMap.containsKey("mass")) {
+                intensityColumn = columnMap.get("mass");
+            } else if (columnMap.containsKey("signal")) {
+                intensityColumn = columnMap.get("signal");
+            }
+
+            String line;
+
+            while ((line = reader.readLine()) != null) {
+
+                if (line.trim().isEmpty()) {
+                    continue;
+                }
+
+                String[] values = line.split(",");
+
+                int requiredMaximumColumn = Math.max(
+                        Math.max(particleColumn, frameColumn),
+                        Math.max(xColumn, yColumn)
+                );
+
+                if (values.length <= requiredMaximumColumn) {
+                    continue;
+                }
+
+                try {
+                    int particle = (int) Double.parseDouble(
+                            values[particleColumn].trim().replace("\"", "")
+                    );
+
+                    int frame = (int) Double.parseDouble(
+                            values[frameColumn].trim().replace("\"", "")
+                    );
+
+                    double x = Double.parseDouble(
+                            values[xColumn].trim().replace("\"", "")
+                    );
+
+                    double y = Double.parseDouble(
+                            values[yColumn].trim().replace("\"", "")
+                    );
+
+                    double intensity = 0.0;
+
+                    if (intensityColumn != null && values.length > intensityColumn) {
+                        String intensityText = values[intensityColumn]
+                                .trim()
+                                .replace("\"", "");
+
+                        if (!intensityText.isEmpty()) {
+                            intensity = Double.parseDouble(intensityText);
+                        }
+                    }
+
+                    Detection detection = new Detection(
+                            frame,
+                            x,
+                            y,
+                            intensity
+                    );
+
+                    importedDetections.add(detection);
+
+                    Track track = importedTrackMap.get(particle);
+
+                    if (track == null) {
+                        track = new Track(particle, detection);
+                        importedTrackMap.put(particle, track);
+                    } else {
+                        track.addDetection(detection);
+                    }
+
+                    importedRows++;
+
+                } catch (NumberFormatException rowException) {
+                    // 当前行格式错误时跳过，不中断整个文件导入。
+                }
+            }
+
+            if (importedTrackMap.isEmpty()) {
+                logArea.append("没有从 CSV 中读取到有效轨迹。\n\n");
+                return;
+            }
+
+            List<Track> importedTracks =
+                    new ArrayList<>(importedTrackMap.values());
+
+            importedTracks.sort(Comparator.comparingInt(track -> track.id));
+
+            for (Track track : importedTracks) {
+                track.detections.sort(
+                        Comparator.comparingInt(detection -> detection.frame)
+                );
+            }
+
+            lastDetections.clear();
+            lastDetections.addAll(importedDetections);
+
+            lastTracks.clear();
+            lastTracks.addAll(importedTracks);
+
+            showImportedTrackResults();
+
+            logArea.append("外部追踪 CSV 导入完成。\n");
+            logArea.append("文件：" + csvFile.getAbsolutePath() + "\n");
+            logArea.append("有效数据行数：" + importedRows + "\n");
+            logArea.append("particle 数量：" + lastTracks.size() + "\n");
+            logArea.append("坐标点数量：" + lastDetections.size() + "\n");
+
+            if (intensityColumn == null) {
+                logArea.append("未找到 mass、signal 或 Intensity 列，强度统一记为 0。\n");
+            }
+
+            logArea.append(
+                    "现在可以直接点击：轨迹统计、计算 MSD、绘制MSD、计算D或导出结果。\n\n"
+            );
+
+        } catch (Exception ex) {
+            logArea.append("CSV 导入失败：" + ex.getMessage() + "\n\n");
+        }
+    }
+
+    private void showImportedTrackResults() {
+        ResultsTable trackTable = new ResultsTable();
+
+        for (Track track : lastTracks) {
+            for (Detection detection : track.detections) {
+                trackTable.incrementCounter();
+                trackTable.addValue("particle", track.id);
+                trackTable.addValue("frame", detection.frame);
+                trackTable.addValue("x", detection.x);
+                trackTable.addValue("y", detection.y);
+                trackTable.addValue("Intensity", detection.intensity);
+            }
+        }
+
+        trackTable.show("Imported Track Results");
+    }
     private void denoiseCurrentImage(JTextArea logArea) {
         try {
             ImagePlus original = IJ.getImage();
@@ -434,7 +795,7 @@ public class Simple_GUI implements PlugIn {
             }
 
             List<Track> allTracks = new ArrayList<>();
-            int nextTrackId = 1;
+            int nextTrackId = 0;
 
             for (int frame = 1; frame <= maxFrame; frame++) {
 
@@ -529,7 +890,7 @@ public class Simple_GUI implements PlugIn {
 
                 for (Detection detection : points) {
                     trackTable.incrementCounter();
-                    trackTable.addValue("Track_ID", track.id);
+                    trackTable.addValue("particle", track.id);
                     trackTable.addValue("Frame", detection.frame);
                     trackTable.addValue("X", detection.x);
                     trackTable.addValue("Y", detection.y);
@@ -642,7 +1003,7 @@ public class Simple_GUI implements PlugIn {
                 }
 
                 summaryTable.incrementCounter();
-                summaryTable.addValue("Track_ID", track.id);
+                summaryTable.addValue("particle", track.id);
                 summaryTable.addValue("Start_Frame", startFrame);
                 summaryTable.addValue("End_Frame", endFrame);
                 summaryTable.addValue("N_Points", numberOfPoints);
@@ -729,7 +1090,7 @@ public class Simple_GUI implements PlugIn {
                         double msd = sumSquaredDisplacement / pairCount;
 
                         msdTable.incrementCounter();
-                        msdTable.addValue("Track_ID", track.id);
+                        msdTable.addValue("particle", track.id);
                         msdTable.addValue("Lag_Frames", lag);
                         msdTable.addValue("MSD_px2", msd);
                         msdTable.addValue("N_Pairs", pairCount);
@@ -766,35 +1127,239 @@ public class Simple_GUI implements PlugIn {
             logArea.append("MSD 计算失败：" + ex.getMessage() + "\n\n");
         }
     }
-    private void exportTracksToCSV(JTextArea logArea) {
+
+    private void plotMSD(JTextArea logArea) {
+        try {
+            if (lastTracks.isEmpty()) {
+                logArea.append("还没有追踪结果，请先点击“简单追踪”，再点击“计算 MSD”。\n\n");
+                return;
+            }
+
+            Map<Integer, Double> ensembleSumByLag = new HashMap<>();
+            Map<Integer, Integer> ensembleCountByLag = new HashMap<>();
+
+            for (Track track : lastTracks) {
+                List<Detection> points = track.detections;
+
+                if (points.size() < 2) {
+                    continue;
+                }
+
+                points.sort(Comparator.comparingInt(d -> d.frame));
+
+                int maxLag = points.size() - 1;
+
+                for (int lag = 1; lag <= maxLag; lag++) {
+                    for (int i = 0; i < points.size() - lag; i++) {
+                        Detection p1 = points.get(i);
+                        Detection p2 = points.get(i + lag);
+
+                        double dx = p2.x - p1.x;
+                        double dy = p2.y - p1.y;
+                        double squaredDisplacement = dx * dx + dy * dy;
+
+                        ensembleSumByLag.put(
+                                lag,
+                                ensembleSumByLag.getOrDefault(lag, 0.0) + squaredDisplacement
+                        );
+
+                        ensembleCountByLag.put(
+                                lag,
+                                ensembleCountByLag.getOrDefault(lag, 0) + 1
+                        );
+                    }
+                }
+            }
+
+            List<Integer> lags = new ArrayList<>(ensembleSumByLag.keySet());
+            lags.sort(Integer::compareTo);
+
+            double[] x = new double[lags.size()];
+            double[] y = new double[lags.size()];
+
+            for (int i = 0; i < lags.size(); i++) {
+                int lag = lags.get(i);
+                x[i] = lag;
+                y[i] = ensembleSumByLag.get(lag) / ensembleCountByLag.get(lag);
+            }
+
+            ij.gui.Plot plot = new ij.gui.Plot(
+                    "Ensemble MSD Curve",
+                    "Lag Frames",
+                    "MSD px^2",
+                    x,
+                    y
+            );
+
+            plot.show();
+
+            logArea.append("MSD曲线绘制完成。\n");
+            logArea.append("曲线类型：Ensemble MSD\n");
+            logArea.append("数据点数量：" + lags.size() + "\n\n");
+
+        } catch (Exception ex) {
+            logArea.append("MSD绘图失败：" + ex.getMessage() + "\n\n");
+        }
+    }
+
+    private void calculateDiffusionCoefficient(JTextArea logArea) {
         try {
             if (lastTracks.isEmpty()) {
                 logArea.append("还没有追踪结果，请先点击“简单追踪”。\n\n");
                 return;
             }
 
-            JFileChooser fileChooser = new JFileChooser();
-            fileChooser.setDialogTitle("保存追踪结果 CSV");
-            fileChooser.setSelectedFile(new File("track_results.csv"));
+            Map<Integer, Double> ensembleSumByLag = new HashMap<>();
+            Map<Integer, Integer> ensembleCountByLag = new HashMap<>();
 
-            int userSelection = fileChooser.showSaveDialog(null);
+            for (Track track : lastTracks) {
+                List<Detection> points = track.detections;
 
-            if (userSelection != JFileChooser.APPROVE_OPTION) {
+                if (points.size() < 2) {
+                    continue;
+                }
+
+                points.sort(Comparator.comparingInt(d -> d.frame));
+
+                int maxLag = points.size() - 1;
+
+                for (int lag = 1; lag <= maxLag; lag++) {
+                    for (int i = 0; i < points.size() - lag; i++) {
+                        Detection p1 = points.get(i);
+                        Detection p2 = points.get(i + lag);
+
+                        double dx = p2.x - p1.x;
+                        double dy = p2.y - p1.y;
+                        double squaredDisplacement = dx * dx + dy * dy;
+
+                        ensembleSumByLag.put(
+                                lag,
+                                ensembleSumByLag.getOrDefault(lag, 0.0) + squaredDisplacement
+                        );
+
+                        ensembleCountByLag.put(
+                                lag,
+                                ensembleCountByLag.getOrDefault(lag, 0) + 1
+                        );
+                    }
+                }
+            }
+
+            List<Integer> lags = new ArrayList<>(ensembleSumByLag.keySet());
+            lags.sort(Integer::compareTo);
+
+            int fitPoints = Math.min(5, lags.size());
+
+            if (fitPoints < 2) {
+                logArea.append("MSD点数不足，无法拟合扩散系数。\n\n");
+                return;
+            }
+
+            double sumX = 0.0;
+            double sumY = 0.0;
+            double sumXY = 0.0;
+            double sumXX = 0.0;
+
+            for (int i = 0; i < fitPoints; i++) {
+                int lag = lags.get(i);
+                double x = lag;
+                double y = ensembleSumByLag.get(lag) / ensembleCountByLag.get(lag);
+
+                sumX += x;
+                sumY += y;
+                sumXY += x * y;
+                sumXX += x * x;
+            }
+
+            double n = fitPoints;
+            double denominator = n * sumXX - sumX * sumX;
+
+            if (denominator == 0) {
+                logArea.append("拟合失败：分母为0。\n\n");
+                return;
+            }
+
+            double slope = (n * sumXY - sumX * sumY) / denominator;
+            double intercept = (sumY - slope * sumX) / n;
+
+            double diffusionCoefficient = slope / 4.0;
+
+            ResultsTable diffusionTable = new ResultsTable();
+            diffusionTable.incrementCounter();
+            diffusionTable.addValue("Fit_Points", fitPoints);
+            diffusionTable.addValue("Slope_px2_per_frame", slope);
+            diffusionTable.addValue("Intercept_px2", intercept);
+            diffusionTable.addValue("Diffusion_Coefficient_D_px2_per_frame", diffusionCoefficient);
+            diffusionTable.show("Diffusion Coefficient");
+
+            logArea.append("扩散系数计算完成。\n");
+            logArea.append("拟合模型：MSD = slope × lag + intercept\n");
+            logArea.append("使用前 " + fitPoints + " 个 MSD 点拟合。\n");
+            logArea.append("Slope = " + slope + " px²/frame\n");
+            logArea.append("Intercept = " + intercept + " px²\n");
+            logArea.append("D = slope / 4 = " + diffusionCoefficient + " px²/frame\n\n");
+
+        } catch (Exception ex) {
+            logArea.append("扩散系数计算失败：" + ex.getMessage() + "\n\n");
+        }
+    }
+    private void exportSelectedResults(JTextArea logArea) {
+        String exportType = (String) exportTypeBox.getSelectedItem();
+
+        if (exportType == null) {
+            logArea.append("请选择导出类型。\n\n");
+            return;
+        }
+
+        if (exportType.contains("Track Results")) {
+            exportTrackResultsToCSV(logArea);
+        } else if (exportType.contains("Track Summary")) {
+            exportTrackSummaryToCSV(logArea);
+        } else if (exportType.contains("MSD Results")) {
+            exportMSDResultsToCSV(logArea);
+        } else if (exportType.contains("Ensemble MSD")) {
+            exportEnsembleMSDToCSV(logArea);
+        }
+    }
+
+    private File chooseCSVFile(String defaultFileName) {
+        JFileChooser fileChooser = new JFileChooser();
+        fileChooser.setDialogTitle("保存 CSV 文件");
+        fileChooser.setSelectedFile(new File(defaultFileName));
+
+        int userSelection = fileChooser.showSaveDialog(null);
+
+        if (userSelection != JFileChooser.APPROVE_OPTION) {
+            return null;
+        }
+
+        File fileToSave = fileChooser.getSelectedFile();
+        String filePath = fileToSave.getAbsolutePath();
+
+        if (!filePath.toLowerCase().endsWith(".csv")) {
+            fileToSave = new File(filePath + ".csv");
+        }
+
+        return fileToSave;
+    }
+
+    private void exportTrackResultsToCSV(JTextArea logArea) {
+        try {
+            if (lastTracks.isEmpty()) {
+                logArea.append("还没有追踪结果，请先点击“简单追踪”。\n\n");
+                return;
+            }
+
+            File fileToSave = chooseCSVFile("track_results.csv");
+
+            if (fileToSave == null) {
                 logArea.append("已取消导出。\n\n");
                 return;
             }
 
-            File fileToSave = fileChooser.getSelectedFile();
-
-            String filePath = fileToSave.getAbsolutePath();
-
-            if (!filePath.toLowerCase().endsWith(".csv")) {
-                fileToSave = new File(filePath + ".csv");
-            }
-
             PrintWriter writer = new PrintWriter(fileToSave, "UTF-8");
 
-            writer.println("Track_ID,Frame,X,Y,Intensity");
+            writer.println("particle,Frame,X,Y,Intensity");
 
             int rowCount = 0;
 
@@ -807,6 +1372,269 @@ public class Simple_GUI implements PlugIn {
                                     detection.y + "," +
                                     detection.intensity
                     );
+                    rowCount++;
+                }
+            }
+
+            writer.close();
+
+            logArea.append("轨迹坐标导出完成。\n");
+            logArea.append("保存路径：" + fileToSave.getAbsolutePath() + "\n");
+            logArea.append("导出轨迹数量：" + lastTracks.size() + "\n");
+            logArea.append("导出数据行数：" + rowCount + "\n\n");
+
+        } catch (Exception ex) {
+            logArea.append("轨迹坐标导出失败：" + ex.getMessage() + "\n\n");
+        }
+    }
+
+    private void exportTrackSummaryToCSV(JTextArea logArea) {
+        try {
+            if (lastTracks.isEmpty()) {
+                logArea.append("还没有追踪结果，请先点击“简单追踪”。\n\n");
+                return;
+            }
+
+            File fileToSave = chooseCSVFile("track_summary.csv");
+
+            if (fileToSave == null) {
+                logArea.append("已取消导出。\n\n");
+                return;
+            }
+
+            PrintWriter writer = new PrintWriter(fileToSave, "UTF-8");
+
+            writer.println("particle,Start_Frame,End_Frame,N_Points,Duration_Frames,Start_X,Start_Y,End_X,End_Y,Displacement,Path_Length,Mean_Step,Mean_Speed_px_per_frame,Mean_Intensity");
+
+            int rowCount = 0;
+
+            for (Track track : lastTracks) {
+                List<Detection> points = track.detections;
+
+                if (points.isEmpty()) {
+                    continue;
+                }
+
+                points.sort(Comparator.comparingInt(d -> d.frame));
+
+                Detection first = points.get(0);
+                Detection last = points.get(points.size() - 1);
+
+                int startFrame = first.frame;
+                int endFrame = last.frame;
+                int numberOfPoints = points.size();
+                int duration = endFrame - startFrame + 1;
+
+                double displacement = distance(first.x, first.y, last.x, last.y);
+
+                double pathLength = 0.0;
+                double intensitySum = 0.0;
+
+                for (Detection detection : points) {
+                    intensitySum += detection.intensity;
+                }
+
+                for (int i = 1; i < points.size(); i++) {
+                    Detection previous = points.get(i - 1);
+                    Detection current = points.get(i);
+
+                    pathLength += distance(
+                            previous.x,
+                            previous.y,
+                            current.x,
+                            current.y
+                    );
+                }
+
+                double meanIntensity = intensitySum / numberOfPoints;
+
+                double meanStep = 0.0;
+                if (numberOfPoints > 1) {
+                    meanStep = pathLength / (numberOfPoints - 1);
+                }
+
+                double meanSpeed = 0.0;
+                if (duration > 1) {
+                    meanSpeed = pathLength / (duration - 1);
+                }
+
+                writer.println(
+                        track.id + "," +
+                                startFrame + "," +
+                                endFrame + "," +
+                                numberOfPoints + "," +
+                                duration + "," +
+                                first.x + "," +
+                                first.y + "," +
+                                last.x + "," +
+                                last.y + "," +
+                                displacement + "," +
+                                pathLength + "," +
+                                meanStep + "," +
+                                meanSpeed + "," +
+                                meanIntensity
+                );
+
+                rowCount++;
+            }
+
+            writer.close();
+
+            logArea.append("轨迹统计导出完成。\n");
+            logArea.append("保存路径：" + fileToSave.getAbsolutePath() + "\n");
+            logArea.append("导出轨迹数量：" + rowCount + "\n\n");
+
+        } catch (Exception ex) {
+            logArea.append("轨迹统计导出失败：" + ex.getMessage() + "\n\n");
+        }
+    }
+
+    private void exportMSDResultsToCSV(JTextArea logArea) {
+        try {
+            if (lastTracks.isEmpty()) {
+                logArea.append("还没有追踪结果，请先点击“简单追踪”。\n\n");
+                return;
+            }
+
+            File fileToSave = chooseCSVFile("msd_results.csv");
+
+            if (fileToSave == null) {
+                logArea.append("已取消导出。\n\n");
+                return;
+            }
+
+            PrintWriter writer = new PrintWriter(fileToSave, "UTF-8");
+
+            writer.println("particle,Lag_Frames,MSD_px2,N_Pairs");
+
+            int rowCount = 0;
+
+            for (Track track : lastTracks) {
+                List<Detection> points = track.detections;
+
+                if (points.size() < 2) {
+                    continue;
+                }
+
+                points.sort(Comparator.comparingInt(d -> d.frame));
+
+                int maxLag = points.size() - 1;
+
+                for (int lag = 1; lag <= maxLag; lag++) {
+                    double sumSquaredDisplacement = 0.0;
+                    int pairCount = 0;
+
+                    for (int i = 0; i < points.size() - lag; i++) {
+                        Detection p1 = points.get(i);
+                        Detection p2 = points.get(i + lag);
+
+                        double dx = p2.x - p1.x;
+                        double dy = p2.y - p1.y;
+
+                        double squaredDisplacement = dx * dx + dy * dy;
+
+                        sumSquaredDisplacement += squaredDisplacement;
+                        pairCount++;
+                    }
+
+                    if (pairCount > 0) {
+                        double msd = sumSquaredDisplacement / pairCount;
+
+                        writer.println(
+                                track.id + "," +
+                                        lag + "," +
+                                        msd + "," +
+                                        pairCount
+                        );
+
+                        rowCount++;
+                    }
+                }
+            }
+
+            writer.close();
+
+            logArea.append("MSD 结果导出完成。\n");
+            logArea.append("保存路径：" + fileToSave.getAbsolutePath() + "\n");
+            logArea.append("导出 MSD 数据行数：" + rowCount + "\n\n");
+
+        } catch (Exception ex) {
+            logArea.append("MSD 结果导出失败：" + ex.getMessage() + "\n\n");
+        }
+    }
+
+    private void exportEnsembleMSDToCSV(JTextArea logArea) {
+        try {
+            if (lastTracks.isEmpty()) {
+                logArea.append("还没有追踪结果，请先点击“简单追踪”。\n\n");
+                return;
+            }
+
+            File fileToSave = chooseCSVFile("ensemble_msd.csv");
+
+            if (fileToSave == null) {
+                logArea.append("已取消导出。\n\n");
+                return;
+            }
+
+            Map<Integer, Double> ensembleSumByLag = new HashMap<>();
+            Map<Integer, Integer> ensembleCountByLag = new HashMap<>();
+
+            for (Track track : lastTracks) {
+                List<Detection> points = track.detections;
+
+                if (points.size() < 2) {
+                    continue;
+                }
+
+                points.sort(Comparator.comparingInt(d -> d.frame));
+
+                int maxLag = points.size() - 1;
+
+                for (int lag = 1; lag <= maxLag; lag++) {
+                    for (int i = 0; i < points.size() - lag; i++) {
+                        Detection p1 = points.get(i);
+                        Detection p2 = points.get(i + lag);
+
+                        double dx = p2.x - p1.x;
+                        double dy = p2.y - p1.y;
+
+                        double squaredDisplacement = dx * dx + dy * dy;
+
+                        ensembleSumByLag.put(
+                                lag,
+                                ensembleSumByLag.getOrDefault(lag, 0.0) + squaredDisplacement
+                        );
+
+                        ensembleCountByLag.put(
+                                lag,
+                                ensembleCountByLag.getOrDefault(lag, 0) + 1
+                        );
+                    }
+                }
+            }
+
+            PrintWriter writer = new PrintWriter(fileToSave, "UTF-8");
+
+            writer.println("Lag_Frames,Ensemble_MSD_px2,N_Pairs");
+
+            int rowCount = 0;
+
+            List<Integer> lags = new ArrayList<>(ensembleSumByLag.keySet());
+            lags.sort(Integer::compareTo);
+
+            for (Integer lag : lags) {
+                double sum = ensembleSumByLag.get(lag);
+                int count = ensembleCountByLag.get(lag);
+
+                if (count > 0) {
+                    double ensembleMSD = sum / count;
+
+                    writer.println(
+                            lag + "," +
+                                    ensembleMSD + "," +
+                                    count
+                    );
 
                     rowCount++;
                 }
@@ -814,13 +1642,12 @@ public class Simple_GUI implements PlugIn {
 
             writer.close();
 
-            logArea.append("导出完成。\n");
+            logArea.append("Ensemble MSD 导出完成。\n");
             logArea.append("保存路径：" + fileToSave.getAbsolutePath() + "\n");
-            logArea.append("导出轨迹数量：" + lastTracks.size() + "\n");
             logArea.append("导出数据行数：" + rowCount + "\n\n");
 
         } catch (Exception ex) {
-            logArea.append("导出失败：" + ex.getMessage() + "\n\n");
+            logArea.append("Ensemble MSD 导出失败：" + ex.getMessage() + "\n\n");
         }
     }
     private List<Detection> findCentroidDetections(
