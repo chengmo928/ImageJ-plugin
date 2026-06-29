@@ -67,7 +67,7 @@ public class Simple_GUI implements PlugIn {
         frame.setSize(1300, 750);
         frame.setLocationRelativeTo(null);
 
-        JLabel title = new JLabel("单颗粒分子识别 GUI Demo", SwingConstants.CENTER);
+        JLabel title = new JLabel("单颗粒追踪分析系统", SwingConstants.CENTER);
         title.setFont(titleFont);
 
         JButton generateButton = new JButton("生成测试图像");
@@ -88,7 +88,6 @@ public class Simple_GUI implements PlugIn {
         importSequenceButton.setFont(chineseFont);
         imageButton.setFont(chineseFont);
         importCSVButton.setFont(chineseFont);
-        imageButton.setFont(chineseFont);
         denoiseButton.setFont(chineseFont);
         detectButton.setFont(chineseFont);
         trackButton.setFont(chineseFont);
@@ -190,11 +189,8 @@ public class Simple_GUI implements PlugIn {
 
         JPanel row1 = new JPanel();
         row1.add(generateButton);
-        row1.add(importSequenceButton);
         row1.add(imageButton);
-        row1.add(importCSVButton);
         row1.add(denoiseButton);
-        row1.add(invertSequenceCheckBox);
 
         JPanel importRow = new JPanel();
         importRow.add(importSequenceButton);
@@ -658,6 +654,7 @@ public class Simple_GUI implements PlugIn {
             }
 
             lastDetections.clear();
+            lastTracks.clear();
 
             ImageStack stack = imp.getStack();
             int totalSlices = stack.getSize();
@@ -1186,9 +1183,12 @@ public class Simple_GUI implements PlugIn {
             ij.gui.Plot plot = new ij.gui.Plot(
                     "Ensemble MSD Curve",
                     "Lag Frames",
-                    "MSD px^2",
-                    x,
-                    y
+                    "MSD px^2"
+            );
+            plot.addPoints(
+                x,
+                y,
+                ij.gui.Plot.CONNECTED_CIRCLES
             );
 
             plot.show();
@@ -1853,6 +1853,9 @@ public class Simple_GUI implements PlugIn {
     }
 
     private void generateTestImage(JTextArea logArea) {
+
+        lastDetections.clear();
+        lastTracks.clear();
 
         int width = 256;
         int height = 256;
