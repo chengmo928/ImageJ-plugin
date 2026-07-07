@@ -1,9 +1,23 @@
-package com.yourname.imagejgui;
+package io.github.zhengfangfang0304.particletracking;
+
+import io.github.zhengfangfang0304.particletracking.tracking.ParticleTracker;
+import io.github.zhengfangfang0304.particletracking.tracking.TrackingParameters;
+import io.github.zhengfangfang0304.particletracking.tracking.trackmate.TrackMateNearestNeighborTracker;
+import io.github.zhengfangfang0304.particletracking.detection.CentroidDetector;
+import io.github.zhengfangfang0304.particletracking.detection.DetectionParameters;
+import io.github.zhengfangfang0304.particletracking.detection.LocalMaximumDetector;
+import io.github.zhengfangfang0304.particletracking.detection.ParticleDetector;
+import io.github.zhengfangfang0304.particletracking.model.Detection;
+import io.github.zhengfangfang0304.particletracking.model.Track;
+import io.github.zhengfangfang0304.particletracking.controller.ParticleTrackingController;
+import io.github.zhengfangfang0304.particletracking.simulation.SyntheticImageGenerator;
 
 import ij.IJ;
 import ij.ImagePlus;
 import ij.ImageStack;
 import ij.io.DirectoryChooser;
+import ij.WindowManager;
+
 import ij.plugin.FolderOpener;
 import ij.gui.Overlay;
 import ij.gui.Line;
@@ -11,8 +25,8 @@ import ij.gui.OvalRoi;
 import ij.measure.ResultsTable;
 import ij.plugin.PlugIn;
 import ij.plugin.filter.RankFilters;
-import ij.process.FloatProcessor;
 import ij.process.ImageProcessor;
+
 
 import javax.swing.*;
 import java.io.BufferedReader;
@@ -30,7 +44,6 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Random;
 import java.util.Set;
 
 public class Simple_GUI implements PlugIn {
@@ -50,8 +63,11 @@ public class Simple_GUI implements PlugIn {
     private JTextField minDistanceField;
     private JTextField trackingMaxDistanceField;
 
+    private final ParticleTrackingController controller =
+            new ParticleTrackingController();
     private final List<Detection> lastDetections = new ArrayList<>();
     private final List<Track> lastTracks = new ArrayList<>();
+    
 
 
     @Override
@@ -76,7 +92,8 @@ public class Simple_GUI implements PlugIn {
         JButton importCSVButton = new JButton("导入CSV轨迹");
         JButton denoiseButton = new JButton("执行降噪");
         JButton detectButton = new JButton("识别颗粒");
-        JButton trackButton = new JButton("简单追踪");
+        JButton trackButton = new JButton("自编简单追踪");
+        JButton trackMateButton = new JButton("TrackMate 最近邻");
         JButton analyzeButton = new JButton("轨迹统计");
         JButton msdButton = new JButton("计算 MSD");
         JButton plotMSDButton = new JButton("绘制MSD");
@@ -91,6 +108,7 @@ public class Simple_GUI implements PlugIn {
         denoiseButton.setFont(chineseFont);
         detectButton.setFont(chineseFont);
         trackButton.setFont(chineseFont);
+        trackMateButton.setFont(chineseFont);
         analyzeButton.setFont(chineseFont);
         msdButton.setFont(chineseFont);
         plotMSDButton.setFont(chineseFont);
@@ -170,6 +188,9 @@ public class Simple_GUI implements PlugIn {
         detectButton.addActionListener(e -> detectParticles(logArea));
 
         trackButton.addActionListener(e -> trackParticles(logArea));
+        //给按钮添加事件监听器，点击按钮时执行trackParticles方法=用户点击该按钮后，立刻执行粒子追踪逻辑，同时把日志输出框传给追踪函数用于打印运行信息
+
+        trackMateButton.addActionListener(e -> trackParticlesWithTrackMate(logArea));
 
         plotMSDButton.addActionListener(e -> plotMSD(logArea));
 
@@ -218,6 +239,7 @@ public class Simple_GUI implements PlugIn {
         JPanel row4 = new JPanel();
         row4.add(detectButton);
         row4.add(trackButton);
+        row4.add(trackMateButton);
         row4.add(analyzeButton);
         row4.add(msdButton);
         row4.add(plotMSDButton);
@@ -329,6 +351,7 @@ public class Simple_GUI implements PlugIn {
              */
             lastDetections.clear();
             lastTracks.clear();
+            controller.clearSession();
 
             logArea.append("图像序列导入完成。\n");
             logArea.append("文件夹：" + directory + "\n");
@@ -534,6 +557,22 @@ public class Simple_GUI implements PlugIn {
             lastTracks.clear();
             lastTracks.addAll(importedTracks);
 
+          
+            /*
+            * 将CSV导入结果同步保存到Controller。
+            *
+            * 如果Fiji当前打开了对应图像，就一并保存；
+            * 如果没有打开图像，currentImage会是null。
+            */
+            ImagePlus currentImage =
+                    WindowManager.getCurrentImage();
+
+            controller.loadImportedResults(
+                    currentImage,
+                    importedDetections,
+                    importedTracks
+            );  
+
             showImportedTrackResults();
 
             logArea.append("外部追踪 CSV 导入完成。\n");
@@ -610,6 +649,10 @@ public class Simple_GUI implements PlugIn {
 
             denoised.show();
 
+            lastDetections.clear();
+            lastTracks.clear();
+            controller.clearSession();
+
             logArea.append("降噪完成。\n");
             logArea.append("原始图像：" + original.getTitle() + "\n");
             logArea.append("降噪方法：" + method + "\n");
@@ -629,131 +672,476 @@ public class Simple_GUI implements PlugIn {
             ImagePlus imp = IJ.getImage();
 
             if (imp == null) {
-                logArea.append("没有检测到当前图像，请先打开或生成一张图像。\n\n");
+                logArea.append(
+                        "没有检测到当前图像，请先打开或生成图像。\n\n"
+                );
                 return;
             }
 
-            double threshold = Double.parseDouble(detectionThresholdField.getText());
-            int localRadius = Integer.parseInt(localMaxRadiusField.getText());
-            double minDistance = Double.parseDouble(minDistanceField.getText());
-            String detectionMethod = (String) detectionMethodBox.getSelectedItem();
+            double threshold =
+                    Double.parseDouble(
+                            detectionThresholdField.getText()
+                    );
 
-            if (threshold <= 0) {
-                logArea.append("识别阈值必须大于 0。\n\n");
-                return;
+            int localRadius =
+                    Integer.parseInt(
+                            localMaxRadiusField.getText()
+                    );
+
+            double minDistance =
+                    Double.parseDouble(
+                            minDistanceField.getText()
+                    );
+
+            String detectionMethod =
+                    (String) detectionMethodBox.getSelectedItem();
+
+            /*
+            * 创建统一的检测参数对象。
+            */
+            DetectionParameters parameters =
+                    new DetectionParameters(
+                            threshold,
+                            localRadius,
+                            minDistance
+                    );
+
+            /*
+            * 根据界面选择创建具体检测器。
+            */
+            ParticleDetector detector;
+
+            if (detectionMethod != null
+                    && detectionMethod.contains("Centroid")) {
+
+                detector = new CentroidDetector();
+
+            } else {
+
+                detector = new LocalMaximumDetector();
             }
 
-            if (localRadius < 1) {
-                logArea.append("局部极大半径至少为 1。\n\n");
-                return;
-            }
+            /*
+            * 具体检测过程交给独立检测器。
+            */
+            List<Detection> detectedParticles =
+                    controller.detect(
+                            imp,
+                            detector,
+                            parameters
+                    );
 
-            if (minDistance < 1) {
-                logArea.append("最小距离至少为 1。\n\n");
-                return;
-            }
-
+            /*
+            * 新检测结果产生后，
+            * 覆盖旧检测结果并清空旧轨迹。
+            */
             lastDetections.clear();
+            lastDetections.addAll(detectedParticles);
+
             lastTracks.clear();
 
-            ImageStack stack = imp.getStack();
-            int totalSlices = stack.getSize();
-
+            /*
+            * Simple_GUI只负责显示结果，
+            * 不再负责具体检测算法。
+            */
             Overlay overlay = new Overlay();
-            ResultsTable resultsTable = new ResultsTable();
+            ResultsTable resultsTable =
+                    new ResultsTable();
 
-            for (int frame = 1; frame <= totalSlices; frame++) {
+            for (Detection detection : lastDetections) {
 
-                ImageProcessor ip = stack.getProcessor(frame);
-                FloatProcessor fp = ip.convertToFloatProcessor();
-
-                List<Detection> candidates;
-
-                if (detectionMethod.contains("Centroid")) {
-                    candidates = findCentroidDetections(
-                            fp,
-                            frame,
-                            threshold
-                    );
-                } else {
-                    candidates = findLocalMaxima(
-                            fp,
-                            frame,
-                            threshold,
-                            localRadius
-                    );
-                }
-
-                candidates.sort(
-                        Comparator.comparingDouble((Detection d) -> d.intensity).reversed()
+                resultsTable.incrementCounter();
+                resultsTable.addValue(
+                        "Frame",
+                        detection.frame
+                );
+                resultsTable.addValue(
+                        "X",
+                        detection.x
+                );
+                resultsTable.addValue(
+                        "Y",
+                        detection.y
+                );
+                resultsTable.addValue(
+                        "Intensity",
+                        detection.intensity
                 );
 
-                List<Detection> acceptedInThisFrame = new ArrayList<>();
+                OvalRoi roi = new OvalRoi(
+                        detection.x - 4,
+                        detection.y - 4,
+                        8,
+                        8
+                );
 
-                for (Detection candidate : candidates) {
+                roi.setStrokeColor(Color.RED);
+                roi.setPosition(detection.frame);
 
-                    boolean tooClose = false;
-
-                    for (Detection accepted : acceptedInThisFrame) {
-                        double distance = distance(
-                                candidate.x,
-                                candidate.y,
-                                accepted.x,
-                                accepted.y
-                        );
-
-                        if (distance < minDistance) {
-                            tooClose = true;
-                            break;
-                        }
-                    }
-
-                    if (!tooClose) {
-                        acceptedInThisFrame.add(candidate);
-                        lastDetections.add(candidate);
-
-                        resultsTable.incrementCounter();
-                        resultsTable.addValue("Frame", candidate.frame);
-                        resultsTable.addValue("X", candidate.x);
-                        resultsTable.addValue("Y", candidate.y);
-                        resultsTable.addValue("Intensity", candidate.intensity);
-
-                        OvalRoi roi = new OvalRoi(
-                                candidate.x - 4,
-                                candidate.y - 4,
-                                8,
-                                8
-                        );
-
-                        roi.setStrokeColor(Color.RED);
-                        roi.setPosition(frame);
-                        overlay.add(roi);
-                    }
-                }
-
-                IJ.showProgress(frame, totalSlices);
+                overlay.add(roi);
             }
 
             imp.setOverlay(overlay);
             resultsTable.show("Particle Detections");
 
             logArea.append("颗粒识别完成。\n");
-            logArea.append("图像：" + imp.getTitle() + "\n");
-            logArea.append("识别方法：" + detectionMethod + "\n");
-            logArea.append("识别阈值：" + threshold + "\n");
-            logArea.append("局部极大半径：" + localRadius + "\n");
-            logArea.append("最小距离：" + minDistance + "\n");
-            logArea.append("总帧数：" + totalSlices + "\n");
-            logArea.append("检测到颗粒总数：" + lastDetections.size() + "\n");
-            logArea.append("结果已显示在 Particle Detections 表格中。\n\n");
+            logArea.append(
+                    "图像：" + imp.getTitle() + "\n"
+            );
+            logArea.append(
+                    "识别方法：" + detector.getName() + "\n"
+            );
+            logArea.append(
+                    "识别阈值：" + threshold + "\n"
+            );
+            logArea.append(
+                    "局部极大半径：" + localRadius + "\n"
+            );
+            logArea.append(
+                    "最小距离：" + minDistance + "\n"
+            );
+            logArea.append(
+                    "总帧数：" + imp.getStackSize() + "\n"
+            );
+            logArea.append(
+                    "检测到颗粒总数："
+                            + lastDetections.size()
+                            + "\n"
+            );
+            logArea.append(
+                    "结果已显示在 Particle Detections 表格中。\n\n"
+            );
 
         } catch (NumberFormatException ex) {
-            logArea.append("识别参数输入错误，请输入数字。\n\n");
+
+            logArea.append(
+                    "识别参数输入错误，请输入正确的数字。\n\n"
+            );
+
+        } catch (IllegalArgumentException ex) {
+
+            logArea.append(
+                    "检测参数错误："
+                            + ex.getMessage()
+                            + "\n\n"
+            );
+
         } catch (Exception ex) {
-            logArea.append("颗粒识别失败：" + ex.getMessage() + "\n\n");
+
+            logArea.append(
+                    "颗粒识别失败："
+                            + ex.getMessage()
+                            + "\n\n"
+            );
+
+            ex.printStackTrace();
         }
     }
 
+   
+
+/**
+ * 通过独立的TrackMateNearestNeighborTracker类
+ * 执行TrackMate最近邻追踪。
+ */
+    private void trackParticlesWithTrackMate(
+            JTextArea logArea
+    ) {
+        try {
+            logArea.append(
+                    "开始执行 TrackMate 最近邻追踪。\n"
+            );
+
+            /*
+            * 必须先完成颗粒检测。
+            */
+            if (lastDetections.isEmpty()) {
+                logArea.append(
+                        "还没有颗粒识别结果，"
+                                + "请先点击“识别颗粒”。\n\n"
+                );
+                return;
+            }
+
+            /*
+            * 获取当前ImageJ图像。
+            */
+            ImagePlus imp = IJ.getImage();
+
+            if (imp == null) {
+                logArea.append(
+                        "没有检测到当前图像。\n\n"
+                );
+                return;
+            }
+
+            /*
+            * 从界面读取最大连接距离。
+            */
+            double maxLinkDistance =
+                    Double.parseDouble(
+                            trackingMaxDistanceField.getText()
+                    );
+
+            if (maxLinkDistance <= 0) {
+                logArea.append(
+                        "追踪最大距离必须大于0。\n\n"
+                );
+                return;
+            }
+
+            /*
+            * 使用接口类型保存具体追踪器对象。
+            *
+            * 左边ParticleTracker是统一接口；
+            * 右边TrackMateNearestNeighborTracker
+            * 是具体实现。
+            */
+            ParticleTracker tracker =
+                    new TrackMateNearestNeighborTracker();
+
+            /*
+            * 创建统一追踪参数。
+            *
+            * 第一个参数：
+            * 最大连接距离。
+            *
+            * 第二个参数：
+            * 最大间隔帧数。
+            *
+            * TrackMate最近邻目前不使用间隔闭合，
+            * 所以暂时设置为0。
+            */
+            TrackingParameters parameters =
+                    new TrackingParameters(
+                            maxLinkDistance,
+                            0
+                    );
+
+            /*
+            * 调用统一接口执行追踪。
+            *
+            * TrackMate的Spot转换、Model创建、
+            * 最近邻工厂配置和结果转换，
+            * 都由独立的追踪器类负责。
+            */
+            List<Track> tracks =
+                    controller.track(
+                            tracker,
+                            parameters
+                    );
+
+            /*
+            * 用新结果覆盖之前的轨迹。
+            */
+            lastTracks.clear();
+            lastTracks.addAll(tracks);
+
+            /*
+            * GUI只负责显示结果。
+            */
+            showTrackingResults(
+                    imp,
+                    lastTracks,
+                    "TrackMate NN Results"
+            );
+
+            logArea.append(
+                    "TrackMate最近邻追踪完成。\n"
+            );
+            logArea.append(
+                    "追踪器：" + tracker.getName() + "\n"
+            );
+            logArea.append(
+                    "输入检测点数量："
+                            + lastDetections.size()
+                            + "\n"
+            );
+            logArea.append(
+                    "最大连接距离："
+                            + maxLinkDistance
+                            + " pixel\n"
+            );
+            logArea.append(
+                    "生成轨迹数量："
+                            + lastTracks.size()
+                            + "\n"
+            );
+            logArea.append(
+                    "结果已保存到lastTracks，"
+                            + "可以继续进行轨迹统计、MSD、D和导出。\n\n"
+            );
+
+        } catch (NumberFormatException ex) {
+
+            logArea.append(
+                    "追踪参数输入错误，"
+                            + "请输入正确数字，例如10。\n\n"
+            );
+
+        } catch (IllegalArgumentException ex) {
+
+            logArea.append(
+                    "追踪参数错误："
+                            + ex.getMessage()
+                            + "\n\n"
+            );
+
+        } catch (UnsupportedOperationException ex) {
+
+            logArea.append(
+                    "当前追踪器尚未完成："
+                            + ex.getMessage()
+                            + "\n\n"
+            );
+
+        } catch (Exception ex) {
+
+            logArea.append(
+                    "TrackMate追踪失败："
+                            + ex.getClass().getSimpleName()
+                            + "："
+                            + ex.getMessage()
+                            + "\n\n"
+            );
+
+            ex.printStackTrace();
+        }
+    }
+/**
+ * 在ImageJ图像上显示追踪结果，
+ * 并生成轨迹坐标结果表格。
+ */
+    private void showTrackingResults(
+            ImagePlus imp,
+            List<Track> tracks,
+            String tableTitle
+    ) {
+        if (imp == null) {
+            throw new IllegalArgumentException(
+                    "显示追踪结果时，图像不能为null。"
+            );
+        }
+
+        if (tracks == null) {
+            throw new IllegalArgumentException(
+                    "追踪结果不能为null。"
+            );
+        }
+
+        ResultsTable trackTable =
+                new ResultsTable();
+
+        Overlay overlay =
+                new Overlay();
+
+        /*
+        * 重新显示所有红色检测圆。
+        */
+        for (Detection detection : lastDetections) {
+
+            OvalRoi roi = new OvalRoi(
+                    detection.x - 4,
+                    detection.y - 4,
+                    8,
+                    8
+            );
+
+            roi.setStrokeColor(Color.RED);
+            roi.setPosition(detection.frame);
+
+            overlay.add(roi);
+        }
+
+        /*
+        * 写入轨迹表格并绘制绿色连接线。
+        */
+        for (Track track : tracks) {
+
+            /*
+            * 使用副本排序，
+            * 避免直接改变Track内部原有顺序。
+            */
+            List<Detection> points =
+                    new ArrayList<>(
+                            track.detections
+                    );
+
+            points.sort(
+                    Comparator.comparingInt(
+                            detection -> detection.frame
+                    )
+            );
+
+            for (Detection detection : points) {
+
+                trackTable.incrementCounter();
+
+                trackTable.addValue(
+                        "particle",
+                        track.id
+                );
+
+                trackTable.addValue(
+                        "Frame",
+                        detection.frame
+                );
+
+                trackTable.addValue(
+                        "X",
+                        detection.x
+                );
+
+                trackTable.addValue(
+                        "Y",
+                        detection.y
+                );
+
+                trackTable.addValue(
+                        "Intensity",
+                        detection.intensity
+                );
+            }
+
+            /*
+            * 按轨迹中的相邻检测点绘制连线。
+            */
+            for (int i = 1;
+                i < points.size();
+                i++) {
+
+                Detection previous =
+                        points.get(i - 1);
+
+                Detection current =
+                        points.get(i);
+
+                Line line = new Line(
+                        previous.x,
+                        previous.y,
+                        current.x,
+                        current.y
+                );
+
+                line.setStrokeColor(Color.GREEN);
+                line.setStrokeWidth(2);
+
+                /*
+                * 0表示所有帧都可以看到连接线。
+                */
+                line.setPosition(0);
+
+                overlay.add(line);
+            }
+        }
+
+        imp.setOverlay(overlay);
+
+        trackTable.show(tableTitle);
+    }
+    
+
+    //自编的贪心追踪算法
     private void trackParticles(JTextArea logArea) {
         try {
             logArea.append("开始执行简单追踪。\n");
@@ -1650,195 +2038,10 @@ public class Simple_GUI implements PlugIn {
             logArea.append("Ensemble MSD 导出失败：" + ex.getMessage() + "\n\n");
         }
     }
-    private List<Detection> findCentroidDetections(
-            FloatProcessor fp,
-            int frame,
-            double threshold
-    ) {
-        List<Detection> detections = new ArrayList<>();
+    
+  
 
-        int width = fp.getWidth();
-        int height = fp.getHeight();
-
-        boolean[][] visited = new boolean[width][height];
-
-        for (int y = 1; y < height - 1; y++) {
-            for (int x = 1; x < width - 1; x++) {
-
-                if (visited[x][y]) {
-                    continue;
-                }
-
-                float value = fp.getf(x, y);
-
-                if (value < threshold) {
-                    continue;
-                }
-
-                List<int[]> regionPixels = new ArrayList<>();
-                floodFillRegion(
-                        fp,
-                        x,
-                        y,
-                        threshold,
-                        visited,
-                        regionPixels
-                );
-
-                if (regionPixels.isEmpty()) {
-                    continue;
-                }
-
-                double sumIntensity = 0.0;
-                double weightedX = 0.0;
-                double weightedY = 0.0;
-                double maxIntensity = 0.0;
-
-                for (int[] pixel : regionPixels) {
-                    int px = pixel[0];
-                    int py = pixel[1];
-
-                    double intensity = fp.getf(px, py);
-
-                    sumIntensity += intensity;
-                    weightedX += px * intensity;
-                    weightedY += py * intensity;
-
-                    if (intensity > maxIntensity) {
-                        maxIntensity = intensity;
-                    }
-                }
-
-                if (sumIntensity <= 0) {
-                    continue;
-                }
-
-                double centroidX = weightedX / sumIntensity;
-                double centroidY = weightedY / sumIntensity;
-
-                detections.add(
-                        new Detection(
-                                frame,
-                                centroidX,
-                                centroidY,
-                                maxIntensity
-                        )
-                );
-            }
-        }
-
-        return detections;
-    }
-    private void floodFillRegion(
-            FloatProcessor fp,
-            int startX,
-            int startY,
-            double threshold,
-            boolean[][] visited,
-            List<int[]> regionPixels
-    ) {
-        int width = fp.getWidth();
-        int height = fp.getHeight();
-
-        List<int[]> queue = new ArrayList<>();
-        queue.add(new int[]{startX, startY});
-        visited[startX][startY] = true;
-
-        int index = 0;
-
-        while (index < queue.size()) {
-            int[] current = queue.get(index);
-            index++;
-
-            int x = current[0];
-            int y = current[1];
-
-            regionPixels.add(new int[]{x, y});
-
-            int[][] neighbors = new int[][]{
-                    {x + 1, y},
-                    {x - 1, y},
-                    {x, y + 1},
-                    {x, y - 1}
-            };
-
-            for (int[] neighbor : neighbors) {
-                int nx = neighbor[0];
-                int ny = neighbor[1];
-
-                if (nx < 0 || nx >= width || ny < 0 || ny >= height) {
-                    continue;
-                }
-
-                if (visited[nx][ny]) {
-                    continue;
-                }
-
-                if (fp.getf(nx, ny) < threshold) {
-                    continue;
-                }
-
-                visited[nx][ny] = true;
-                queue.add(new int[]{nx, ny});
-            }
-        }
-    }
-    private List<Detection> findLocalMaxima(
-            FloatProcessor fp,
-            int frame,
-            double threshold,
-            int radius
-    ) {
-
-        List<Detection> detections = new ArrayList<>();
-
-        int width = fp.getWidth();
-        int height = fp.getHeight();
-
-        for (int y = radius; y < height - radius; y++) {
-            for (int x = radius; x < width - radius; x++) {
-
-                float centerValue = fp.getf(x, y);
-
-                if (centerValue < threshold) {
-                    continue;
-                }
-
-                boolean isLocalMaximum = true;
-
-                for (int yy = y - radius; yy <= y + radius; yy++) {
-                    for (int xx = x - radius; xx <= x + radius; xx++) {
-
-                        if (xx == x && yy == y) {
-                            continue;
-                        }
-
-                        if (fp.getf(xx, yy) > centerValue) {
-                            isLocalMaximum = false;
-                            break;
-                        }
-                    }
-
-                    if (!isLocalMaximum) {
-                        break;
-                    }
-                }
-
-                if (isLocalMaximum) {
-                    detections.add(
-                            new Detection(
-                                    frame,
-                                    x,
-                                    y,
-                                    centerValue
-                            )
-                    );
-                }
-            }
-        }
-
-        return detections;
-    }
+    
 
     private double distance(
             double x1,
@@ -1852,158 +2055,36 @@ public class Simple_GUI implements PlugIn {
         return Math.sqrt(dx * dx + dy * dy);
     }
 
-    private void generateTestImage(JTextArea logArea) {
-
+    private void generateTestImage(
+            JTextArea logArea
+    ) {
         lastDetections.clear();
         lastTracks.clear();
+        controller.clearSession();
 
-        int width = 256;
-        int height = 256;
-        int frames = 30;
-        int particles = 8;
+        ImagePlus image =
+                SyntheticImageGenerator.createDefaultMovie();
 
-        double sigma = 2.0;
-        double amplitude = 180.0;
-        double background = 20.0;
-        double noiseLevel = 8.0;
-
-        Random random = new Random(12345);
-
-        double[] x = new double[particles];
-        double[] y = new double[particles];
-        double[] vx = new double[particles];
-        double[] vy = new double[particles];
-
-        for (int i = 0; i < particles; i++) {
-            x[i] = 30 + random.nextDouble() * (width - 60);
-            y[i] = 30 + random.nextDouble() * (height - 60);
-
-            vx[i] = -1.5 + random.nextDouble() * 3.0;
-            vy[i] = -1.5 + random.nextDouble() * 3.0;
-        }
-
-        ImageStack stack = new ImageStack(width, height);
-
-        for (int t = 0; t < frames; t++) {
-
-            float[] pixels = new float[width * height];
-
-            for (int i = 0; i < pixels.length; i++) {
-                pixels[i] = (float) (background + random.nextGaussian() * noiseLevel);
-            }
-
-            for (int p = 0; p < particles; p++) {
-
-                drawGaussianSpot(
-                        pixels,
-                        width,
-                        height,
-                        x[p],
-                        y[p],
-                        amplitude,
-                        sigma
-                );
-
-                x[p] += vx[p];
-                y[p] += vy[p];
-
-                if (x[p] < 10 || x[p] > width - 10) {
-                    vx[p] = -vx[p];
-                }
-
-                if (y[p] < 10 || y[p] > height - 10) {
-                    vy[p] = -vy[p];
-                }
-            }
-
-            FloatProcessor fp = new FloatProcessor(width, height, pixels);
-            stack.addSlice("Frame " + (t + 1), fp);
-        }
-
-        ImagePlus imp = new ImagePlus("Synthetic Single Particle Movie", stack);
-        imp.setDimensions(1, 1, frames);
-        imp.setOpenAsHyperStack(true);
-        imp.setDisplayRange(0, 255);
-        imp.show();
+        image.show();
 
         logArea.append("已生成测试图像。\n");
-        logArea.append("图像大小：" + width + " × " + height + "\n");
-        logArea.append("帧数：" + frames + "\n");
-        logArea.append("颗粒数：" + particles + "\n");
-        logArea.append("说明：亮点模拟单颗粒分子，背景加入随机噪声。\n\n");
+        logArea.append(
+                "图像大小："
+                        + image.getWidth()
+                        + " × "
+                        + image.getHeight()
+                        + "\n"
+        );
+        logArea.append(
+                "帧数："
+                        + image.getStackSize()
+                        + "\n\n"
+        );
     }
 
-    private void drawGaussianSpot(
-            float[] pixels,
-            int width,
-            int height,
-            double centerX,
-            double centerY,
-            double amplitude,
-            double sigma
-    ) {
+    
 
-        int radius = (int) Math.ceil(3 * sigma);
-
-        int xMin = Math.max(0, (int) Math.floor(centerX - radius));
-        int xMax = Math.min(width - 1, (int) Math.ceil(centerX + radius));
-        int yMin = Math.max(0, (int) Math.floor(centerY - radius));
-        int yMax = Math.min(height - 1, (int) Math.ceil(centerY + radius));
-
-        for (int y = yMin; y <= yMax; y++) {
-            for (int x = xMin; x <= xMax; x++) {
-
-                double dx = x - centerX;
-                double dy = y - centerY;
-
-                double value = amplitude * Math.exp(
-                        -(dx * dx + dy * dy) / (2 * sigma * sigma)
-                );
-
-                int index = y * width + x;
-                pixels[index] += (float) value;
-            }
-        }
-    }
-
-    private static class Detection {
-
-        int frame;
-        double x;
-        double y;
-        double intensity;
-
-        Detection(
-                int frame,
-                double x,
-                double y,
-                double intensity
-        ) {
-            this.frame = frame;
-            this.x = x;
-            this.y = y;
-            this.intensity = intensity;
-        }
-    }
-
-    private static class Track {
-
-        int id;
-        List<Detection> detections = new ArrayList<>();
-
-        Track(int id, Detection firstDetection) {
-            this.id = id;
-            addDetection(firstDetection);
-        }
-
-        void addDetection(Detection detection) {
-            detections.add(detection);
-        }
-
-        Detection getLastDetection() {
-            return detections.get(detections.size() - 1);
-        }
-    }
+    
 
     private static class LinkCandidate {
 
