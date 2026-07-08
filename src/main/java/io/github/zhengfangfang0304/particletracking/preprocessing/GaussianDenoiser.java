@@ -3,17 +3,16 @@ package io.github.zhengfangfang0304.particletracking.preprocessing;
 import ij.IJ;
 import ij.ImagePlus;
 import ij.ImageStack;
-import ij.plugin.filter.RankFilters;
 import ij.process.ImageProcessor;
 
 /**
- * 基于ImageJ RankFilters的中值降噪器。
+ * 基于ImageJ Gaussian Blur的高斯降噪器。
  */
-public final class MedianDenoiser implements ImageDenoiser {
+public final class GaussianDenoiser implements ImageDenoiser {
 
     @Override
     public String getName() {
-        return "Median Filter 中值滤波";
+        return "Gaussian Blur 高斯滤波";
     }
 
     @Override
@@ -31,7 +30,7 @@ public final class MedianDenoiser implements ImageDenoiser {
                 || parameter <= 0.0) {
 
             throw new IllegalArgumentException(
-                    "中值滤波参数必须是大于0的有限数字。"
+                    "高斯滤波参数必须是大于0的有限数字。"
             );
         }
 
@@ -39,7 +38,7 @@ public final class MedianDenoiser implements ImageDenoiser {
                 image.duplicate();
 
         denoised.setTitle(
-                image.getTitle() + " - Median Denoised"
+                image.getTitle() + " - Gaussian Denoised"
         );
 
         ImageStack stack =
@@ -48,9 +47,6 @@ public final class MedianDenoiser implements ImageDenoiser {
         int totalSlices =
                 stack.getSize();
 
-        RankFilters rankFilters =
-                new RankFilters();
-
         for (int slice = 1;
              slice <= totalSlices;
              slice++) {
@@ -58,11 +54,7 @@ public final class MedianDenoiser implements ImageDenoiser {
             ImageProcessor processor =
                     stack.getProcessor(slice);
 
-            rankFilters.rank(
-                    processor,
-                    parameter,
-                    RankFilters.MEDIAN
-            );
+            processor.blurGaussian(parameter);
 
             IJ.showProgress(
                     slice,
