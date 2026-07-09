@@ -7,15 +7,14 @@ import io.github.zhengfangfang0304.particletracking.model.Track;
 import io.github.zhengfangfang0304.particletracking.preprocessing.GaussianDenoiser;
 import io.github.zhengfangfang0304.particletracking.preprocessing.ImageDenoiser;
 import io.github.zhengfangfang0304.particletracking.preprocessing.MedianDenoiser;
-import io.github.zhengfangfang0304.particletracking.simulation.SyntheticImageGenerator;
 import io.github.zhengfangfang0304.particletracking.detection.CentroidDetector;
 import io.github.zhengfangfang0304.particletracking.detection.DetectionParameters;
 import io.github.zhengfangfang0304.particletracking.detection.LocalMaximumDetector;
-import io.github.zhengfangfang0304.particletracking.detection.ParticleDetector;
-import io.github.zhengfangfang0304.particletracking.gui.ResultTablePresenter;
-import io.github.zhengfangfang0304.particletracking.tracking.GreedyNearestNeighborTracker;
 import io.github.zhengfangfang0304.particletracking.tracking.ParticleTracker;
 import io.github.zhengfangfang0304.particletracking.tracking.TrackingParameters;
+import io.github.zhengfangfang0304.particletracking.detection.ParticleDetector;
+import io.github.zhengfangfang0304.particletracking.tracking.GreedyNearestNeighborTracker;
+
 import io.github.zhengfangfang0304.particletracking.tracking.trackmate.TrackMateNearestNeighborTracker;
 import io.github.zhengfangfang0304.particletracking.analysis.DiffusionCoefficientCalculator;
 import io.github.zhengfangfang0304.particletracking.analysis.MsdCalculator;
@@ -27,11 +26,20 @@ import io.github.zhengfangfang0304.particletracking.model.EnsembleMsdResult;
 import io.github.zhengfangfang0304.particletracking.model.MsdResult;
 import io.github.zhengfangfang0304.particletracking.model.TrackStatistics;
 
+
+import io.github.zhengfangfang0304.particletracking.simulation.GaussianSpotRenderer;
+import io.github.zhengfangfang0304.particletracking.simulation.SimulationConfig;
+import io.github.zhengfangfang0304.particletracking.simulation.SyntheticDataset;
+import io.github.zhengfangfang0304.particletracking.simulation.SyntheticDatasetGenerator;
+import io.github.zhengfangfang0304.particletracking.simulation.SyntheticDatasetExporter;
+
 import ij.WindowManager;
 import ij.gui.Plot;
 import ij.measure.ResultsTable;
 
 import javax.swing.JFileChooser;
+import javax.swing.JOptionPane;
+import javax.swing.SwingUtilities;
 
 import java.io.File;
 
@@ -109,11 +117,8 @@ public final class ParticleTrackingFrame extends JFrame {
     private final JTextArea logArea =
             new JTextArea();
 
-    /**
-     * 创建主窗口。
-     *
-     * @param controller 程序控制器
-     */
+    
+
     public ParticleTrackingFrame(
             ParticleTrackingController controller
     ) {
@@ -126,6 +131,34 @@ public final class ParticleTrackingFrame extends JFrame {
                 );
 
         initializeWindow();
+
+        SwingUtilities.invokeLater(
+                this::showStartupChoice
+        );
+    }
+
+    private void showStartupChoice() {
+        int choice =
+                JOptionPane.showOptionDialog(
+                        this,
+                        "请选择进入方式：",
+                        "单颗粒追踪插件",
+                        JOptionPane.YES_NO_CANCEL_OPTION,
+                        JOptionPane.QUESTION_MESSAGE,
+                        null,
+                        new String[]{
+                                "设计并生成模拟数据",
+                                "进入普通分析界面",
+                                "取消"
+                        },
+                        "进入普通分析界面"
+                );
+
+        if (choice == 0) {
+            generateTestImage();
+        } else if (choice == 2) {
+            dispose();
+        }
     }
 
     private void initializeWindow() {
@@ -147,7 +180,7 @@ public final class ParticleTrackingFrame extends JFrame {
         title.setFont(titleFont);
 
         JButton generateButton =
-                new JButton("生成测试图像");
+                new JButton("数据生成器");
 
         JButton importSequenceButton =
                 new JButton("导入图像序列");
@@ -329,68 +362,34 @@ public final class ParticleTrackingFrame extends JFrame {
                 )
         );
 
-        /*
-        * 按钮事件。
-        *
-        * 注意：
-        * 这些方法下一步要从 Simple_GUI.java
-        * 迁移到 ParticleTrackingFrame.java。
-        */
-        generateButton.addActionListener(
-                event -> generateTestImage()
-        );
+       
+        generateButton.addActionListener(event -> generateTestImage());
 
-        importSequenceButton.addActionListener(
-                event -> importImageSequence()
-        );
+        importSequenceButton.addActionListener(event -> importImageSequence());
 
-        imageButton.addActionListener(
-                event -> readCurrentImage()
-        );
+        imageButton.addActionListener(event -> readCurrentImage());
 
-        importCSVButton.addActionListener(
-                event -> importTrackingCSV()
-        );
+        importCSVButton.addActionListener(event -> importTrackingCSV());
 
-        denoiseButton.addActionListener(
-                event -> denoiseCurrentImage()
-        );
+        denoiseButton.addActionListener(event -> denoiseCurrentImage());
 
-        detectButton.addActionListener(
-                event -> detectParticles()
-        );
+        detectButton.addActionListener(event -> detectParticles());
 
-        trackButton.addActionListener(
-                event -> trackParticles()
-        );
+        trackButton.addActionListener(event -> trackParticles());
 
-        trackMateButton.addActionListener(
-                event -> trackParticlesWithTrackMate()
-        );
+        trackMateButton.addActionListener(event -> trackParticlesWithTrackMate());
 
-        analyzeButton.addActionListener(
-                event -> analyzeTracks()
-        );
+        analyzeButton.addActionListener(event -> analyzeTracks());
 
-        msdButton.addActionListener(
-                event -> calculateMSD()
-        );
+        msdButton.addActionListener(event -> calculateMSD());
 
-        plotMSDButton.addActionListener(
-                event -> plotMSD()
-        );
+        plotMSDButton.addActionListener(event -> plotMSD());
 
-        diffusionButton.addActionListener(
-                event -> calculateDiffusionCoefficient()
-        );
+        diffusionButton.addActionListener(event -> calculateDiffusionCoefficient());
 
-        exportButton.addActionListener(
-                event -> exportSelectedResults()
-        );
+        exportButton.addActionListener(event -> exportSelectedResults());
 
-        closeButton.addActionListener(
-                event -> dispose()
-        );
+        closeButton.addActionListener(event -> dispose());
 
         JPanel controlPanel =
                 new JPanel();
@@ -534,32 +533,110 @@ public final class ParticleTrackingFrame extends JFrame {
     }
 
     private void generateTestImage() {
-        lastDetections.clear();
-        lastTracks.clear();
-        controller.clearSession();
+        try {
+            SimulationConfig config =
+                    SimulationSetupDialog.showDialog(this);
 
-        ImagePlus image =
-                SyntheticImageGenerator.createDefaultMovie();
+            if (config == null) {
+                logArea.append(
+                        "已取消模拟数据生成。\n\n"
+                );
+                return;
+            }
 
-        image.show();
+            SyntheticDatasetGenerator generator =
+                    new SyntheticDatasetGenerator();
 
-        logArea.append("已生成测试图像。\n");
+            SyntheticDataset dataset =
+                    generator.generate(config);
 
-        logArea.append(
-                "图像大小："
-                        + image.getWidth()
-                        + " × "
-                        + image.getHeight()
-                        + "\n"
-        );
+            GaussianSpotRenderer renderer =
+                    new GaussianSpotRenderer();
 
-        logArea.append(
-                "帧数："
-                        + image.getStackSize()
-                        + "\n\n"
-        );
+            ImagePlus image =
+                    renderer.render(dataset, config);
+
+            image.show();
+
+            int saveChoice =
+                    javax.swing.JOptionPane.showConfirmDialog(
+                            this,
+                            "是否保存模拟图像、ground truth 和参数配置？",
+                            "保存模拟数据",
+                            javax.swing.JOptionPane.YES_NO_OPTION
+                    );
+
+            if (saveChoice == javax.swing.JOptionPane.YES_OPTION) {
+                JFileChooser directoryChooser =
+                        new JFileChooser();
+
+                directoryChooser.setDialogTitle(
+                        "选择模拟数据保存文件夹"
+                );
+
+                directoryChooser.setFileSelectionMode(
+                        JFileChooser.DIRECTORIES_ONLY
+                );
+
+                int result =
+                        directoryChooser.showSaveDialog(this);
+
+                if (result == JFileChooser.APPROVE_OPTION) {
+                    File outputDirectory =
+                            directoryChooser.getSelectedFile();
+
+                    SyntheticDatasetExporter.exportAll(
+                            image,
+                            dataset,
+                            config,
+                            outputDirectory
+                    );
+
+                    logArea.append(
+                            "模拟数据已保存。\n"
+                                    + "保存文件夹: "
+                                    + outputDirectory.getAbsolutePath()
+                                    + "\n"
+                                    + "已导出文件:\n"
+                                    + "1. simulation_movie.tif\n"
+                                    + "2. ground_truth_detections.csv\n"
+                                    + "3. simulation_config.json\n\n"
+                    );
+                } else {
+                    logArea.append(
+                            "已取消保存模拟数据。\n\n"
+                    );
+                }
+            }
+
+            logArea.append(
+                    "已生成模拟测试图像。\n"
+                            + "图像尺寸: " + config.width + " × " + config.height + "\n"
+                            + "帧数: " + config.frames + "\n"
+                            + "帧率: " + config.frameRateFps + " fps\n"
+                            + "时间间隔: " + config.getFrameIntervalSeconds() + " s\n"
+                            + "运动模式: " + config.motionMode + "\n"
+                            + "粒子数: " + config.getResolvedParticleCount() + "\n"
+                            + "是否按密度计算: " + (config.useDensity ? "是" : "否") + "\n"
+                            + "粒子密度: " + config.particleDensityPerUm2 + " particles/μm²\n"
+                            + "扩散系数: " + config.diffusionCoefficientUm2PerSecond + " μm²/s\n"
+                            + "真实检测点数量: " + dataset.size() + "\n"
+                            + "PSF sigma: " + config.psfSigma + "\n"
+                            + "背景强度: " + config.background + "\n"
+                            + "噪声 sigma: " + config.noiseSigma + "\n\n"
+            );
+
+        } catch (Exception ex) {
+            logArea.append(
+                    "生成模拟测试图像失败: "
+                            + ex.getMessage()
+                            + "\n\n"
+            );
+
+            ex.printStackTrace();
+        }
     }
-
+    
     private void importImageSequence() {
         try {
             DirectoryChooser directoryChooser =
