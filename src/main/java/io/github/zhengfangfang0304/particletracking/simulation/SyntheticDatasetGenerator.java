@@ -132,19 +132,14 @@ public class SyntheticDatasetGenerator {
             double[] y,
             int p
     ) {
-        double dt = config.getFrameIntervalSeconds();
-
-        double stepSigmaPixel =
-                Math.sqrt(
-                        2.0
-                                * config.diffusionCoefficientUm2PerSecond
-                                * dt
-                ) / config.pixelSizeUm;
+        double stepSigmaPixel = config.getBrownianCoordinateSigmaPixel();
 
         x[p] += stepSigmaPixel * random.nextGaussian();
         y[p] += stepSigmaPixel * random.nextGaussian();
-
+            
         keepInsideImage(config, x, y, p);
+        //自由空间布朗运动，粒子在图像边界处被限制在视野内。
+        //短时间 MSD 应满足 MSD(τ)=4Dτ，长时间可能受到边界影响。
     }
 
     private void updateConfinedBrownian(

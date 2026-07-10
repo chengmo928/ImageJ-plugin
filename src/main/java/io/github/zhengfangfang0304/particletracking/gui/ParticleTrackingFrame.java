@@ -32,6 +32,10 @@ import io.github.zhengfangfang0304.particletracking.simulation.SimulationConfig;
 import io.github.zhengfangfang0304.particletracking.simulation.SyntheticDataset;
 import io.github.zhengfangfang0304.particletracking.simulation.SyntheticDatasetGenerator;
 import io.github.zhengfangfang0304.particletracking.simulation.SyntheticDatasetExporter;
+import io.github.zhengfangfang0304.particletracking.simulation.DatasetBatchConfig;
+import io.github.zhengfangfang0304.particletracking.simulation.DatasetBatchGenerator;
+import io.github.zhengfangfang0304.particletracking.simulation.StandardBrownianBatchPreset;
+
 
 import ij.WindowManager;
 import ij.gui.Plot;
@@ -137,6 +141,7 @@ public final class ParticleTrackingFrame extends JFrame {
         );
     }
 
+    //弹出选择窗口，是否进入数据模拟
     private void showStartupChoice() {
         int choice =
                 JOptionPane.showOptionDialog(
@@ -179,51 +184,34 @@ public final class ParticleTrackingFrame extends JFrame {
 
         title.setFont(titleFont);
 
-        JButton generateButton =
-                new JButton("数据生成器");
+        JButton importSequenceButton = new JButton("导入图像序列");
 
-        JButton importSequenceButton =
-                new JButton("导入图像序列");
+        JButton imageButton = new JButton("检查当前图像");
 
-        JButton imageButton =
-                new JButton("检查当前图像");
+        JButton importCSVButton = new JButton("导入CSV轨迹");
 
-        JButton importCSVButton =
-                new JButton("导入CSV轨迹");
+        JButton denoiseButton = new JButton("执行降噪");
 
-        JButton denoiseButton =
-                new JButton("执行降噪");
+        JButton detectButton = new JButton("识别颗粒");
 
-        JButton detectButton =
-                new JButton("识别颗粒");
+        JButton trackButton = new JButton("自编简单追踪");
 
-        JButton trackButton =
-                new JButton("自编简单追踪");
+        JButton trackMateButton = new JButton("TrackMate 最近邻");
 
-        JButton trackMateButton =
-                new JButton("TrackMate 最近邻");
+        JButton analyzeButton = new JButton("轨迹统计");
 
-        JButton analyzeButton =
-                new JButton("轨迹统计");
+        JButton msdButton = new JButton("计算 MSD");
 
-        JButton msdButton =
-                new JButton("计算 MSD");
+        JButton plotMSDButton = new JButton("绘制MSD");
 
-        JButton plotMSDButton =
-                new JButton("绘制MSD");
+        JButton diffusionButton = new JButton("计算扩散系数D");
 
-        JButton diffusionButton =
-                new JButton("计算扩散系数D");
+        JButton exportButton = new JButton("导出结果");
 
-        JButton exportButton =
-                new JButton("导出结果");
-
-        JButton closeButton =
-                new JButton("关闭");
+        JButton closeButton = new JButton("关闭");
 
         JButton[] buttons =
                 {
-                        generateButton,
                         importSequenceButton,
                         imageButton,
                         importCSVButton,
@@ -362,9 +350,6 @@ public final class ParticleTrackingFrame extends JFrame {
                 )
         );
 
-       
-        generateButton.addActionListener(event -> generateTestImage());
-
         importSequenceButton.addActionListener(event -> importImageSequence());
 
         imageButton.addActionListener(event -> readCurrentImage());
@@ -414,8 +399,6 @@ public final class ParticleTrackingFrame extends JFrame {
 
         JPanel row1 =
                 new JPanel();
-
-        row1.add(generateButton);
         row1.add(imageButton);
         row1.add(denoiseButton);
 
@@ -531,15 +514,34 @@ public final class ParticleTrackingFrame extends JFrame {
             );
         }
     }
-
+//generateTestImage更清楚的名字应该是openSimulationGenerator，为了少改代码，暂时不更改
+//它的主要作用是启动时选择“设计并生成模拟数据”后，打开模拟数据生成器界面
     private void generateTestImage() {
         try {
+            SimulationSetupDialog.DialogResult dialogResult =
+                    SimulationSetupDialog.showDialog(this); 
+            if (dialogResult.getAction()
+                    == SimulationSetupDialog.DialogAction.CANCEL) {
+
+                logArea.append(
+                        "已取消模拟数据生成。\n\n"
+                );
+                return;
+            }
+
+            if (dialogResult.getAction()
+                    == SimulationSetupDialog.DialogAction.STANDARD_BROWNIAN_BATCH) {
+
+                generateStandardBrownianBatchDataset();
+                return;
+            }
+
             SimulationConfig config =
-                    SimulationSetupDialog.showDialog(this);
+                    dialogResult.getConfig();
 
             if (config == null) {
                 logArea.append(
-                        "已取消模拟数据生成。\n\n"
+                        "模拟数据参数为空，已取消生成。\n\n"
                 );
                 return;
             }
@@ -1968,6 +1970,97 @@ public final class ParticleTrackingFrame extends JFrame {
      */
     public void appendLog(String message) {
         logArea.append(message);
+    }
+
+    private void generateStandardBrownianBatchDataset() {
+        try {
+            DatasetBatchConfig batchConfig =
+                    StandardBrownianBatchPreset.createDefault();
+
+            int choice =
+                    JOptionPane.showConfirmDialog(
+                            this,
+                            "即将生成标准自由空间布朗运动数据集。\n\n"
+                                    + "实验条件数量: "
+                                    + batchConfig.getTotalExperimentCount()
+                                    + "\n"
+                                    + "FOV 总数量: "
+                                    + batchConfig.getTotalFovCount()
+                                    + "\n\n"
+                                    + "是否继续？",
+                            "生成标准布朗运动数据集",
+                            JOptionPane.YES_NO_OPTION
+                    );
+
+            if (choice != JOptionPane.YES_OPTION) {
+                logArea.append(
+                        "已取消标准布朗运动数据集生成。\n\n"
+                );
+                return;
+            }
+
+            JFileChooser directoryChooser =
+                    new JFileChooser();
+
+            directoryChooser.setDialogTitle(
+                    "选择标准布朗运动数据集保存位置"
+            );
+
+            directoryChooser.setFileSelectionMode(
+                    JFileChooser.DIRECTORIES_ONLY
+            );
+
+            directoryChooser.setAcceptAllFileFilterUsed(false);
+
+            int result =
+                    directoryChooser.showDialog(
+                            this,
+                            "选择此文件夹"
+                    );
+
+            if (result != JFileChooser.APPROVE_OPTION) {
+                logArea.append(
+                        "已取消标准布朗运动数据集保存。\n\n"
+                );
+                return;
+            }
+
+            File outputDirectory =
+                    directoryChooser.getSelectedFile();
+
+            DatasetBatchGenerator batchGenerator =
+                    new DatasetBatchGenerator();
+
+            DatasetBatchGenerator.GenerationSummary summary =
+                    batchGenerator.generate(
+                            batchConfig,
+                            outputDirectory
+                    );
+
+            logArea.append(
+                    "标准布朗运动数据集生成完成。\n"
+                            + "数据集路径: "
+                            + summary.getDatasetRoot().getAbsolutePath()
+                            + "\n"
+                            + "实验条件数量: "
+                            + summary.getExperimentCount()
+                            + "\n"
+                            + "FOV 数量: "
+                            + summary.getFovCount()
+                            + "\n"
+                            + "运动模型: Einstein free Brownian motion\n"
+                            + "理论关系: MSD(τ) = 4Dτ\n\n"
+            );
+
+        } catch (Exception ex) {
+            logArea.append(
+                    "标准布朗运动数据集生成失败: "
+                            + ex.getMessage()
+                            + "\n\n"
+            );
+
+            ex.printStackTrace();
+        }
     }
 
     /**

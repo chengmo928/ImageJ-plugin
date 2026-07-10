@@ -16,74 +16,87 @@ import javax.swing.JTextField;
 import java.awt.BorderLayout;
 import java.awt.GridLayout;
 
-/**
- * 模拟数据生成参数设置窗口。
- */
+//模拟数据生成参数设置窗口。
+//本文件唯一的类：SimulationSetupDialog
 public class SimulationSetupDialog extends JDialog {
 
-    private boolean confirmed = false;
+        public enum DialogAction {
+        CANCEL,
+        SINGLE_DATASET,
+        STANDARD_BROWNIAN_BATCH
+        }
 
-    private final JTextField widthField =
-            new JTextField("256");
+        public static class DialogResult {
 
-    private final JTextField heightField =
-            new JTextField("256");
+        private final DialogAction action;
+        private final SimulationConfig config;
 
-    private final JTextField framesField =
-            new JTextField("30");
-    private final JLabel particleCountLabel =
-            new JLabel("粒子数：");
+        public DialogResult(
+                DialogAction action,
+                SimulationConfig config
+        ) {
+                this.action = action;
+                this.config = config;
+        }
 
-    private final JTextField particleCountField =
-            new JTextField("8");
+        public DialogAction getAction() {
+                return action;
+        }
 
-    private final JCheckBox useDensityCheckBox =
-            new JCheckBox("根据粒子密度自动计算粒子数");
-    private final JLabel densityLabel =
-            new JLabel("粒子密度 particles/μm²：");
+        public SimulationConfig getConfig() {
+                return config;
+        }
+        }
 
-    private final JTextField densityField =
-            new JTextField("0.05");
+    private DialogAction action = DialogAction.CANCEL;
 
-    private final JLabel densityModeNoteLabel =
-            new JLabel();
+    private final JTextField widthField = new JTextField("256");
 
-    private final JTextField pixelSizeField =
-            new JTextField("0.1");
+    private final JTextField heightField = new JTextField("256");
 
-    private final JTextField frameRateField =
-            new JTextField("10.0");
+    private final JTextField framesField = new JTextField("30");
 
-    private final JTextField diffusionField =
-            new JTextField("0.05");
+    private final JLabel particleCountLabel = new JLabel("粒子数：");
 
-    private final JComboBox<MotionMode> motionModeBox =
-            new JComboBox<>(MotionMode.values());
+    private final JTextField particleCountField = new JTextField("8");
 
-    private final JTextField psfSigmaField =
-            new JTextField("2.0");
+    private final JCheckBox useDensityCheckBox = new JCheckBox("根据粒子密度自动计算粒子数");
 
-    private final JTextField amplitudeField =
-            new JTextField("180.0");
+    private final JLabel densityLabel = new JLabel("粒子密度 particles/μm²：");
 
-    private final JTextField backgroundField =
-            new JTextField("20.0");
+    private final JTextField densityField = new JTextField("0.05");
 
-    private final JTextField noiseSigmaField =
-            new JTextField("8.0");
+    private final JLabel densityModeNoteLabel = new JLabel();
 
-    private final JTextField confinementRadiusField =
-            new JTextField("80.0");
+    private final JTextField pixelSizeField = new JTextField("0.1");
+
+    private final JTextField frameRateField = new JTextField("10.0");
+
+    private final JTextField diffusionField = new JTextField("0.05");
+
+    private final JComboBox<MotionMode> motionModeBox = new JComboBox<>(MotionMode.values());
+
+    private final JTextField psfSigmaField = new JTextField("2.0");
+
+    private final JTextField amplitudeField = new JTextField("180.0");
+
+    private final JTextField backgroundField = new JTextField("20.0");
+
+    private final JTextField noiseSigmaField = new JTextField("8.0");
+
+    private final JTextField confinementRadiusField = new JTextField("80.0");
 
     private SimulationConfig config;
 
     private void updateDensityControlState() {
         boolean useDensity =
                 useDensityCheckBox.isSelected();
-
+                
+        // 勾选密度模式 → 粒子数标签+输入框 全部置灰禁用
         particleCountField.setEnabled(!useDensity);
         particleCountLabel.setEnabled(!useDensity);
 
+        // 勾选密度模式 → 密度输入框+标签 启用；取消勾选则置灰
         densityField.setEnabled(useDensity);
         densityLabel.setEnabled(useDensity);
 
@@ -131,11 +144,15 @@ public class SimulationSetupDialog extends JDialog {
         }
     }
 
+    //构造方法，调用父类JDialog构造，1.绑定父窗口owner;2.弹窗标题：模拟数据生成器；
+    // 3.true，模态弹窗：弹窗不关闭，不能操作后面主界面；
     public SimulationSetupDialog(JFrame owner) {
         super(owner, "模拟数据生成器", true);
 
         setSize(520, 620);
+         //弹窗自动在父窗口居中
         setLocationRelativeTo(owner);
+       //BorderLayout：边界布局
         setLayout(new BorderLayout());
 
         JPanel formPanel =
@@ -214,28 +231,35 @@ public class SimulationSetupDialog extends JDialog {
 
         add(formPanel, BorderLayout.CENTER);
 
-        JPanel buttonPanel =
-                new JPanel();
+        //底部按钮面板
+        JPanel buttonPanel = new JPanel();
 
-        JButton okButton =
-                new JButton("生成数据");
+        JButton okButton = new JButton("生成数据");
+        JButton standardBrownianButton = new JButton("标准布朗批量数据集");
 
-        JButton cancelButton =
-                new JButton("取消");
+        JButton cancelButton = new JButton("取消");
+
+        standardBrownianButton.addActionListener(event -> {
+            action = 
+                    DialogAction.STANDARD_BROWNIAN_BATCH;
+            dispose();
+        });
 
         okButton.addActionListener(event -> onConfirm());
 
         cancelButton.addActionListener(event -> {
-            confirmed = false;
+            action = DialogAction.CANCEL;
             dispose();
         });
 
         buttonPanel.add(okButton);
+        buttonPanel.add(standardBrownianButton);
         buttonPanel.add(cancelButton);
 
         add(buttonPanel, BorderLayout.SOUTH);
     }
 
+    //核心确认逻辑方法
     private void onConfirm() {
         try {
             SimulationConfig newConfig =
@@ -287,10 +311,11 @@ public class SimulationSetupDialog extends JDialog {
                     Double.parseDouble(confinementRadiusField.getText());
 
             this.config = newConfig;
-            this.confirmed = true;
+            this.action = DialogAction.SINGLE_DATASET;
 
             dispose();
 
+        //异常捕获，try-catch
         } catch (NumberFormatException ex) {
             javax.swing.JOptionPane.showMessageDialog(
                     this,
@@ -301,16 +326,15 @@ public class SimulationSetupDialog extends JDialog {
         }
     }
 
-    public static SimulationConfig showDialog(JFrame owner) {
+    public static DialogResult showDialog(JFrame owner) {
         SimulationSetupDialog dialog =
                 new SimulationSetupDialog(owner);
 
         dialog.setVisible(true);
 
-        if (!dialog.confirmed) {
-            return null;
-        }
-
-        return dialog.config;
+        return new DialogResult(
+                dialog.action,
+                dialog.config
+        );
     }
 }

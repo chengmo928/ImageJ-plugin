@@ -1,5 +1,6 @@
 package io.github.zhengfangfang0304.particletracking.simulation;
 
+//导入 Fiji/ImageJ 核心 API，ImagePlus：ImageJ 体系里代表一张图像 / 图像序列栈的对象；
 import ij.IJ;
 import ij.ImagePlus;
 
@@ -85,6 +86,7 @@ public final class SyntheticDatasetExporter {
             ImagePlus image,
             File outputFile
     ) {
+        //ImageJ 内置工具方法，直接把图像对象存为 TIFF 文件。
         IJ.saveAsTiff(
                 image,
                 outputFile.getAbsolutePath()
