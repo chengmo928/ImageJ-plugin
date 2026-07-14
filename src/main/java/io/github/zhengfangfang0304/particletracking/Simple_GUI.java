@@ -24,14 +24,9 @@ public class Simple_GUI implements PlugIn {
                     ParticleTrackingController controller =
                             new ParticleTrackingController();
 
-                    ParticleTrackingFrame frame =
-                            new ParticleTrackingFrame(
+                    ParticleTrackingFrame.openFromPlugin(
                                     controller
                             );
-
-                    frame.setVisible(
-                            true
-                    );
                 }
         );
     }

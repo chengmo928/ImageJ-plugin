@@ -28,6 +28,10 @@ public class GaussianSpotRenderer {
             List<SyntheticParticle> particles = dataset.getParticlesInFrame(frame);
 
             for (SyntheticParticle particle : particles) {
+                if (!particle.isVisible()) {
+                    continue;
+                }
+                //意思是ground truth 里仍然保存这个粒子，但图像里不渲染这个粒子
                 drawGaussianSpot(
                         pixels,
                         config.width,

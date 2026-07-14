@@ -35,6 +35,9 @@ import io.github.zhengfangfang0304.particletracking.simulation.SyntheticDatasetE
 import io.github.zhengfangfang0304.particletracking.simulation.DatasetBatchConfig;
 import io.github.zhengfangfang0304.particletracking.simulation.DatasetBatchGenerator;
 import io.github.zhengfangfang0304.particletracking.simulation.StandardBrownianBatchPreset;
+import io.github.zhengfangfang0304.particletracking.simulation.MultiStageMotionPreset;
+import io.github.zhengfangfang0304.particletracking.simulation.SimulationScenario;
+import io.github.zhengfangfang0304.particletracking.simulation.SimulationExportOptions;
 
 
 import ij.WindowManager;
@@ -133,37 +136,49 @@ public final class ParticleTrackingFrame extends JFrame {
                         controller,
                         "Controller不能为null。"
                 );
-
         initializeWindow();
-
-        SwingUtilities.invokeLater(
-                this::showStartupChoice
-        );
     }
 
-    //弹出选择窗口，是否进入数据模拟
-    private void showStartupChoice() {
-        int choice =
-                JOptionPane.showOptionDialog(
-                        this,
-                        "请选择进入方式：",
-                        "单颗粒追踪插件",
-                        JOptionPane.YES_NO_CANCEL_OPTION,
-                        JOptionPane.QUESTION_MESSAGE,
-                        null,
-                        new String[]{
-                                "设计并生成模拟数据",
-                                "进入普通分析界面",
-                                "取消"
-                        },
-                        "进入普通分析界面"
-                );
+    public static void openFromPlugin(
+            ParticleTrackingController controller
+    ) {
+        SwingUtilities.invokeLater(() -> {
+            int choice =
+                    JOptionPane.showOptionDialog(
+                            null,
+                            "请选择进入方式：",
+                            "单颗粒追踪插件",
+                            JOptionPane.YES_NO_CANCEL_OPTION,
+                            JOptionPane.QUESTION_MESSAGE,
+                            null,
+                            new String[]{
+                                    "设计并生成模拟数据",
+                                    "进入普通分析界面",
+                                    "取消"
+                            },
+                            "进入普通分析界面"
+                    );
 
-        if (choice == 0) {
-            generateTestImage();
-        } else if (choice == 2) {
-            dispose();
-        }
+            if (choice == 0) {
+                ParticleTrackingFrame hiddenFrame =
+                        new ParticleTrackingFrame(controller);
+
+                hiddenFrame.generateTestImage();
+
+                hiddenFrame.dispose();
+
+                return;
+            }
+
+            if (choice == 1) {
+                ParticleTrackingFrame frame =
+                        new ParticleTrackingFrame(controller);
+
+                frame.setVisible(true);
+
+                return;
+            }
+        });
     }
 
     private void initializeWindow() {
@@ -536,8 +551,16 @@ public final class ParticleTrackingFrame extends JFrame {
                 return;
             }
 
-            SimulationConfig config =
-                    dialogResult.getConfig();
+            if (dialogResult.getAction()
+                    == SimulationSetupDialog.DialogAction.MULTI_STAGE_MOTION_TEST) {
+
+            generateMultiStageMotionTestDataset();
+            return;
+            }
+
+            SimulationConfig config = dialogResult.getConfig();
+            SimulationScenario scenario = dialogResult.getScenario();
+            SimulationExportOptions exportOptions = dialogResult.getExportOptions();
 
             if (config == null) {
                 logArea.append(
@@ -549,8 +572,19 @@ public final class ParticleTrackingFrame extends JFrame {
             SyntheticDatasetGenerator generator =
                     new SyntheticDatasetGenerator();
 
-            SyntheticDataset dataset =
-                    generator.generate(config);
+            SyntheticDataset dataset;
+
+            if (scenario != null) {
+                dataset =
+                        generator.generate(
+                                scenario
+                        );
+            } else {
+                dataset =
+                        generator.generate(
+                                config
+                        );
+            }
 
             GaussianSpotRenderer renderer =
                     new GaussianSpotRenderer();
@@ -587,22 +621,39 @@ public final class ParticleTrackingFrame extends JFrame {
                     File outputDirectory =
                             directoryChooser.getSelectedFile();
 
-                    SyntheticDatasetExporter.exportAll(
-                            image,
-                            dataset,
-                            config,
-                            outputDirectory
-                    );
+                    if (scenario != null && exportOptions != null) {
+                        SyntheticDatasetExporter.exportAll(
+                                image,
+                                dataset,
+                                config,
+                                scenario,
+                                exportOptions,
+                                outputDirectory
+                        );
+                    } else if (scenario != null) {
+                        SyntheticDatasetExporter.exportAll(
+                                image,
+                                dataset,
+                                config,
+                                scenario,
+                                outputDirectory
+                        );
+                    } else {
+                        SyntheticDatasetExporter.exportAll(
+                                image,
+                                dataset,
+                                config,
+                                outputDirectory
+                        );
+                    }
+
 
                     logArea.append(
                             "模拟数据已保存。\n"
                                     + "保存文件夹: "
                                     + outputDirectory.getAbsolutePath()
                                     + "\n"
-                                    + "已导出文件:\n"
-                                    + "1. simulation_movie.tif\n"
-                                    + "2. ground_truth_detections.csv\n"
-                                    + "3. simulation_config.json\n\n"
+                                    + "已根据输出设置导出所选文件。\n\n"
                     );
                 } else {
                     logArea.append(
@@ -626,11 +677,116 @@ public final class ParticleTrackingFrame extends JFrame {
                             + "PSF sigma: " + config.psfSigma + "\n"
                             + "背景强度: " + config.background + "\n"
                             + "噪声 sigma: " + config.noiseSigma + "\n\n"
+                            + "随机种子: " + config.randomSeed + "\n\n"
             );
 
         } catch (Exception ex) {
             logArea.append(
                     "生成模拟测试图像失败: "
+                            + ex.getMessage()
+                            + "\n\n"
+            );
+
+            ex.printStackTrace();
+        }
+    }
+
+    private void generateMultiStageMotionTestDataset() {
+        try {
+            SimulationScenario scenario =
+                    MultiStageMotionPreset.createDefaultScenario();
+
+            SimulationConfig config = scenario.getBaseConfig();
+
+            SyntheticDatasetGenerator generator =
+                    new SyntheticDatasetGenerator();
+
+            SyntheticDataset dataset = generator.generate(scenario);
+
+            GaussianSpotRenderer renderer =
+                    new GaussianSpotRenderer();
+
+            ImagePlus image =
+                    renderer.render(dataset, config);
+
+            image.show();
+
+            int saveChoice =
+                    javax.swing.JOptionPane.showConfirmDialog(
+                            this,
+                            "是否保存多阶段运动测试数据？",
+                            "保存模拟数据",
+                            javax.swing.JOptionPane.YES_NO_OPTION
+                    );
+
+            if (saveChoice == javax.swing.JOptionPane.YES_OPTION) {
+                JFileChooser directoryChooser =
+                        new JFileChooser();
+
+                directoryChooser.setDialogTitle(
+                        "选择多阶段运动测试数据保存文件夹"
+                );
+
+                directoryChooser.setFileSelectionMode(
+                        JFileChooser.DIRECTORIES_ONLY
+                );
+
+                directoryChooser.setAcceptAllFileFilterUsed(false);
+
+                int result =
+                        directoryChooser.showDialog(
+                                this,
+                                "选择此文件夹"
+                        );
+
+                if (result == JFileChooser.APPROVE_OPTION) {
+                    File outputDirectory =
+                            directoryChooser.getSelectedFile();
+
+                    SyntheticDatasetExporter.exportAll(
+                            image,
+                            dataset,
+                            config,
+                            scenario,
+                            outputDirectory
+                    );
+
+                    logArea.append(
+                            "多阶段运动测试数据已保存。\n"
+                                    + "保存文件夹: "
+                                    + outputDirectory.getAbsolutePath()
+                                    + "\n"
+                                    + "已导出文件:\n"
+                                    + "1. simulation_movie.tif\n"
+                                    + "2. ground_truth_detections.csv\n"
+                                    + "3. ground_truth_tracks.csv\n"
+                                    + "4. ground_truth_visibility.csv\n"
+                                    + "5. ground_truth_visibility_events.csv\n"
+                                    + "6. ground_truth_motion_segments.csv\n"
+                                    + "7. simulation_config.json\n\n"
+                                    + "8. scenario_config.json\n\n"
+                                    + "9. theoretical_msd.csv\n\n"
+                                    + "10. ground_truth_msd.csv\n\n"
+
+                    );
+                }
+            }
+
+            logArea.append(
+                    "多阶段运动测试数据生成完成。\n"
+                            + "图像尺寸: " + config.width + " × " + config.height + "\n"
+                            + "帧数: " + config.frames + "\n"
+                            + "粒子数: " + config.getResolvedParticleCount() + "\n"
+                            + "时间轴:\n"
+                            + "Frame 1–30: Free Brownian Motion, D = 0.05 μm²/s\n"
+                            + "Frame 31–60: Confined Brownian Motion, D = 0.02 μm²/s\n"
+                            + "Frame 61–75: Immobile / Trapped\n"
+                            + "Frame 76–100: Directed Brownian Motion, D = 0.03 μm²/s, vx = 0.20 μm/s\n\n"
+            );
+
+        } catch (Exception ex) {
+            logArea.append(
+                    "多阶段运动测试数据生成失败: "
                             + ex.getMessage()
                             + "\n\n"
             );
