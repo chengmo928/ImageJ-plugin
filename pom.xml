@@ -19,6 +19,8 @@
 <!--groupId表示项目所属的组织或开发者命名空间-->
 <!--artifactId表示项目名称artifactID和version参与组成jar的文件名-->
 <!--version表示项目版本，-SNAPSHOT表示快照版本,临时版本，正式发布需要去掉-->
+ <!-- 这是Maven默认规则，但为了更容易被ImageJ/Fiji菜单识别，最好让最终jar名字中含有下划线
+ 但Maven坐标和最终jar文件名可以不完全一样，所以我们通过finalName改变最终生成的jar文件名 -->
 
 
 
@@ -28,7 +30,7 @@
     <packaging>jar</packaging>
 
     <!-- 项目的显示名称和说明 -->
-    <name>ImageJ GUI Plugin</name>
+    <name>SPTurbo</name>
     <description>
         A GUI plugin for single-particle detection and tracking in ImageJ/Fiji.
     </description>
@@ -62,7 +64,7 @@
             <version>1.54p</version>
         </dependency>
 
-        <!-- TrackMate 7 API -->
+        <!-- TrackMate 8 API -->
         <dependency>
             <groupId>sc.fiji</groupId>
             <artifactId>TrackMate</artifactId>
@@ -71,4 +73,8 @@
 
     </dependencies>
 
+    <build>
+        <finalName>SPTurbo_-${project.version}</finalName>
+    </build>
+    
 </project>

@@ -43,17 +43,16 @@ import io.github.zhengfangfang0304.particletracking.simulation.SimulationExportO
 import ij.WindowManager;
 import ij.gui.Plot;
 import ij.measure.ResultsTable;
+import ij.IJ;
+import ij.ImagePlus;
+import ij.io.DirectoryChooser;
 
 import javax.swing.JFileChooser;
 import javax.swing.JOptionPane;
 import javax.swing.SwingUtilities;
 
 import java.io.File;
-
-
-import ij.IJ;
-import ij.ImagePlus;
-import ij.io.DirectoryChooser;
+import java.io.IOException;
 
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
@@ -71,6 +70,7 @@ import java.awt.BorderLayout;
 import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.GridLayout;
+import java.awt.Desktop;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -107,6 +107,17 @@ public final class ParticleTrackingFrame extends JFrame {
 
     private final ParticleTrackingController controller;
 
+    private boolean currentImageFromSimulation =
+            false;
+
+    private SyntheticDataset currentSyntheticDataset;
+
+    private SimulationConfig currentSimulationConfig;
+
+    private SimulationScenario currentSimulationScenario;
+
+    private File currentSyntheticOutputDirectory;
+
     private final Font chineseFont =
             new Font(
                     "Microsoft YaHei",
@@ -129,7 +140,7 @@ public final class ParticleTrackingFrame extends JFrame {
     public ParticleTrackingFrame(
             ParticleTrackingController controller
     ) {
-        super("My ImageJ GUI Plugin");
+        super("SPTurbo – Single Particle Tracking");
 
         this.controller =
                 Objects.requireNonNull(
@@ -160,12 +171,14 @@ public final class ParticleTrackingFrame extends JFrame {
                     );
 
             if (choice == 0) {
-                ParticleTrackingFrame hiddenFrame =
+                ParticleTrackingFrame frame =
                         new ParticleTrackingFrame(controller);
 
-                hiddenFrame.generateTestImage();
+                frame.generateTestImage();
 
-                hiddenFrame.dispose();
+                if (!frame.isVisible()) {
+                    frame.dispose();
+                }
 
                 return;
             }
@@ -193,7 +206,7 @@ public final class ParticleTrackingFrame extends JFrame {
 
         JLabel title =
                 new JLabel(
-                        "单颗粒追踪分析系统",
+                        "SPTurbo",
                         SwingConstants.CENTER
                 );
 
@@ -594,6 +607,9 @@ public final class ParticleTrackingFrame extends JFrame {
 
             image.show();
 
+            File outputDirectory =
+                    null;
+
             int saveChoice =
                     javax.swing.JOptionPane.showConfirmDialog(
                             this,
@@ -618,7 +634,7 @@ public final class ParticleTrackingFrame extends JFrame {
                         directoryChooser.showSaveDialog(this);
 
                 if (result == JFileChooser.APPROVE_OPTION) {
-                    File outputDirectory =
+                    outputDirectory =
                             directoryChooser.getSelectedFile();
 
                     if (scenario != null && exportOptions != null) {
@@ -680,6 +696,14 @@ public final class ParticleTrackingFrame extends JFrame {
                             + "随机种子: " + config.randomSeed + "\n\n"
             );
 
+            showPostGenerationOptions(
+                    image,
+                    dataset,
+                    config,
+                    scenario,
+                    outputDirectory
+            );
+
         } catch (Exception ex) {
             logArea.append(
                     "生成模拟测试图像失败: "
@@ -689,6 +713,347 @@ public final class ParticleTrackingFrame extends JFrame {
 
             ex.printStackTrace();
         }
+    }
+
+    private void clearSyntheticDatasetContext() {
+        currentImageFromSimulation =
+                false;
+
+        currentSyntheticDataset =
+                null;
+
+        currentSimulationConfig =
+                null;
+
+        currentSimulationScenario =
+                null;
+
+        currentSyntheticOutputDirectory =
+                null;
+    }
+
+    private void setSyntheticDatasetContext(
+            SyntheticDataset dataset,
+            SimulationConfig config,
+            SimulationScenario scenario,
+            File outputDirectory
+    ) {
+        currentImageFromSimulation =
+                true;
+
+        currentSyntheticDataset =
+                dataset;
+
+        currentSimulationConfig =
+                config;
+
+        currentSimulationScenario =
+                scenario;
+
+        currentSyntheticOutputDirectory =
+                outputDirectory;
+    }
+
+    private void appendSyntheticDatasetContextLog() {
+        if (!currentImageFromSimulation) {
+            logArea.append(
+                    "当前图像来源：外部图像序列或普通图像。\n"
+            );
+
+            logArea.append(
+                    "Ground truth 状态：无。\n\n"
+            );
+
+            return;
+        }
+
+        logArea.append(
+                "当前图像来源：模拟数据生成器。\n"
+        );
+
+        if (currentSyntheticDataset != null) {
+            logArea.append(
+                    "Ground truth 状态：已载入内存。\n"
+            );
+
+            logArea.append(
+                    "真实检测点数量："
+                            + currentSyntheticDataset.size()
+                            + "\n"
+            );
+        } else {
+            logArea.append(
+                    "Ground truth 状态：无。\n"
+            );
+        }
+
+        if (currentSimulationScenario != null) {
+            logArea.append(
+                    "运动阶段数："
+                            + currentSimulationScenario
+                                    .getMotionSegments()
+                                    .size()
+                            + "\n"
+            );
+
+            logArea.append(
+                    "可见性事件数："
+                            + currentSimulationScenario
+                                    .getVisibilityEvents()
+                                    .size()
+                            + "\n"
+            );
+        }
+
+        if (currentSyntheticOutputDirectory != null) {
+            logArea.append(
+                    "模拟数据保存路径："
+                            + currentSyntheticOutputDirectory
+                                    .getAbsolutePath()
+                            + "\n"
+            );
+        } else {
+            logArea.append(
+                    "模拟数据保存路径：未保存到文件夹\n"
+            );
+        }
+
+        logArea.append("\n");
+    }
+
+    private void loadGeneratedDatasetForAnalysis(
+            ImagePlus image,
+            SyntheticDataset dataset,
+            SimulationConfig config,
+            SimulationScenario scenario,
+            File outputDirectory
+    ) {
+        if (image == null) {
+            logArea.append(
+                    "生成图像为空，无法进入普通分析页面。\n\n"
+            );
+
+            return;
+        }
+
+        if (image.getWindow() == null) {
+            image.show();
+        }
+
+        lastDetections.clear();
+        lastTracks.clear();
+        controller.clearSession();
+
+        setSyntheticDatasetContext(
+                dataset,
+                config,
+                scenario,
+                outputDirectory
+        );
+
+        setVisible(true);
+        toFront();
+
+        logArea.append(
+                "已进入普通分析页面，并载入刚生成的模拟数据。\n"
+        );
+
+        logArea.append(
+                "图像名称："
+                        + image.getTitle()
+                        + "\n"
+        );
+
+        logArea.append(
+                "图像尺寸："
+                        + image.getWidth()
+                        + " × "
+                        + image.getHeight()
+                        + "\n"
+        );
+
+        logArea.append(
+                "帧数："
+                        + image.getStackSize()
+                        + "\n"
+        );
+
+        logArea.append(
+                "粒子数："
+                        + config.getResolvedParticleCount()
+                        + "\n"
+        );
+
+        logArea.append(
+                "真实 ground truth 点数："
+                        + dataset.size()
+                        + "\n"
+        );
+
+        if (outputDirectory != null) {
+            logArea.append(
+                    "模拟数据保存路径："
+                            + outputDirectory.getAbsolutePath()
+                            + "\n"
+            );
+        }
+
+        appendSyntheticDatasetContextLog();
+
+        logArea.append(
+                "\n下一步建议：\n"
+                        + "1. 点击“检查当前图像”确认当前图像。\n"
+                        + "2. 点击“执行降噪”，可选。\n"
+                        + "3. 点击“识别颗粒”。\n"
+                        + "4. 点击“自编简单追踪”或“TrackMate 最近邻”。\n"
+                        + "5. 点击“轨迹统计 / 计算 MSD / 计算扩散系数D”。\n\n"
+        );
+    }
+
+    private void openOutputDirectory(
+            File outputDirectory
+    ) {
+        if (outputDirectory == null) {
+            JOptionPane.showMessageDialog(
+                    this,
+                    "当前数据没有保存到文件夹，因此无法打开输出文件夹。",
+                    "没有输出文件夹",
+                    JOptionPane.WARNING_MESSAGE
+            );
+
+            return;
+        }
+
+        if (!outputDirectory.exists()) {
+            JOptionPane.showMessageDialog(
+                    this,
+                    "输出文件夹不存在：\n"
+                            + outputDirectory.getAbsolutePath(),
+                    "文件夹不存在",
+                    JOptionPane.WARNING_MESSAGE
+            );
+
+            return;
+        }
+
+        if (!Desktop.isDesktopSupported()) {
+            JOptionPane.showMessageDialog(
+                    this,
+                    "当前系统不支持自动打开文件夹。\n\n"
+                            + "请手动打开：\n"
+                            + outputDirectory.getAbsolutePath(),
+                    "无法自动打开",
+                    JOptionPane.WARNING_MESSAGE
+            );
+
+            return;
+        }
+
+        try {
+            Desktop.getDesktop().open(
+                    outputDirectory
+            );
+
+        } catch (IOException ex) {
+            JOptionPane.showMessageDialog(
+                    this,
+                    "打开输出文件夹失败：\n"
+                            + ex.getMessage()
+                            + "\n\n请手动打开：\n"
+                            + outputDirectory.getAbsolutePath(),
+                    "打开失败",
+                    JOptionPane.ERROR_MESSAGE
+            );
+        }
+    }
+
+    private void showPostGenerationOptions(
+            ImagePlus image,
+            SyntheticDataset dataset,
+            SimulationConfig config,
+            SimulationScenario scenario,
+            File outputDirectory
+    ) {
+        String saveInfo;
+
+        if (outputDirectory == null) {
+            saveInfo =
+                    "未保存到文件夹";
+        } else {
+            saveInfo =
+                    outputDirectory.getAbsolutePath();
+        }
+
+        int choice =
+                JOptionPane.showOptionDialog(
+                        this,
+                        "模拟数据已经生成完成。\n\n"
+                                + "图像尺寸："
+                                + config.width
+                                + " × "
+                                + config.height
+                                + "\n"
+                                + "帧数："
+                                + config.frames
+                                + "\n"
+                                + "粒子数："
+                                + config.getResolvedParticleCount()
+                                + "\n"
+                                + "真实点数："
+                                + dataset.size()
+                                + "\n"
+                                + "保存路径："
+                                + saveInfo
+                                + "\n\n"
+                                + "请选择下一步操作：",
+                        "模拟数据生成完成",
+                        JOptionPane.DEFAULT_OPTION,
+                        JOptionPane.INFORMATION_MESSAGE,
+                        null,
+                        new String[]{
+                                "进入普通分析页面",
+                                "继续设计新的模拟数据",
+                                "打开输出文件夹",
+                                "关闭"
+                        },
+                        "进入普通分析页面"
+                );
+
+        if (choice == 0) {
+            loadGeneratedDatasetForAnalysis(
+                    image,
+                    dataset,
+                    config,
+                    scenario,
+                    outputDirectory
+            );
+
+            return;
+        }
+
+        if (choice == 1) {
+            generateTestImage();
+
+            return;
+        }
+
+        if (choice == 2) {
+            openOutputDirectory(
+                    outputDirectory
+            );
+
+            showPostGenerationOptions(
+                    image,
+                    dataset,
+                    config,
+                    scenario,
+                    outputDirectory
+            );
+
+            return;
+        }
+
+        dispose();
     }
 
     private void generateMultiStageMotionTestDataset() {
@@ -710,6 +1075,9 @@ public final class ParticleTrackingFrame extends JFrame {
                     renderer.render(dataset, config);
 
             image.show();
+
+            File outputDirectory =
+                    null;
 
             int saveChoice =
                     javax.swing.JOptionPane.showConfirmDialog(
@@ -740,7 +1108,7 @@ public final class ParticleTrackingFrame extends JFrame {
                         );
 
                 if (result == JFileChooser.APPROVE_OPTION) {
-                    File outputDirectory =
+                    outputDirectory =
                             directoryChooser.getSelectedFile();
 
                     SyntheticDatasetExporter.exportAll(
@@ -756,18 +1124,7 @@ public final class ParticleTrackingFrame extends JFrame {
                                     + "保存文件夹: "
                                     + outputDirectory.getAbsolutePath()
                                     + "\n"
-                                    + "已导出文件:\n"
-                                    + "1. simulation_movie.tif\n"
-                                    + "2. ground_truth_detections.csv\n"
-                                    + "3. ground_truth_tracks.csv\n"
-                                    + "4. ground_truth_visibility.csv\n"
-                                    + "5. ground_truth_visibility_events.csv\n"
-                                    + "6. ground_truth_motion_segments.csv\n"
-                                    + "7. simulation_config.json\n\n"
-                                    + "8. scenario_config.json\n\n"
-                                    + "9. theoretical_msd.csv\n\n"
-                                    + "10. ground_truth_msd.csv\n\n"
-
+                                    + "已导出模拟图像、ground truth 和参数配置文件。\n\n"
                     );
                 }
             }
@@ -782,6 +1139,14 @@ public final class ParticleTrackingFrame extends JFrame {
                             + "Frame 31–60: Confined Brownian Motion, D = 0.02 μm²/s\n"
                             + "Frame 61–75: Immobile / Trapped\n"
                             + "Frame 76–100: Directed Brownian Motion, D = 0.03 μm²/s, vx = 0.20 μm/s\n\n"
+            );
+
+            showPostGenerationOptions(
+                    image,
+                    dataset,
+                    config,
+                    scenario,
+                    outputDirectory
             );
 
         } catch (Exception ex) {
@@ -830,7 +1195,14 @@ public final class ParticleTrackingFrame extends JFrame {
             lastTracks.clear();
             controller.clearSession();
 
+            clearSyntheticDatasetContext();
+
             logArea.append("图像序列导入完成。\n");
+
+            logArea.append(
+                    "当前图像来源：外部图像序列。\n"
+                            + "Ground truth 状态：无。\n\n"
+            );
 
             logArea.append(
                     "文件夹："

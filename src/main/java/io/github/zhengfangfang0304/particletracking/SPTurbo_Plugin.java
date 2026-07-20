@@ -8,14 +8,12 @@ import ij.plugin.PlugIn;
 import javax.swing.SwingUtilities;
 
 /**
- * Fiji/ImageJ 插件入口。
+ * SPTurbo 的 Fiji/ImageJ 插件入口。
  *
- * 这个类只负责启动主界面。
- *
- * 真正的 GUI、按钮事件和功能逻辑
- * 已经迁移到 ParticleTrackingFrame 中。
+ * 这个类只负责从 Fiji 菜单启动主界面。
+ * 真正的 GUI 和功能逻辑位于 ParticleTrackingFrame 和各功能模块中。
  */
-public class Simple_GUI implements PlugIn {
+public class SPTurbo_Plugin implements PlugIn {
 
     @Override
     public void run(String arg) {
@@ -25,8 +23,8 @@ public class Simple_GUI implements PlugIn {
                             new ParticleTrackingController();
 
                     ParticleTrackingFrame.openFromPlugin(
-                                    controller
-                            );
+                            controller
+                    );
                 }
         );
     }

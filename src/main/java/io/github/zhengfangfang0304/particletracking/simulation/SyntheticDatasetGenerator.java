@@ -100,8 +100,8 @@ public class SyntheticDatasetGenerator {
 
                 particles.add(
                         new SyntheticParticle(
-                                p + 1,
-                                frame,
+                                p+1,//粒子编号，从1开始
+                                frame,//当前是第几帧
                                 x[p],
                                 y[p],
                                 config.amplitude,
