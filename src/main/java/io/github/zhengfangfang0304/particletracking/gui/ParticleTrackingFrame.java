@@ -28,6 +28,7 @@ import io.github.zhengfangfang0304.particletracking.model.TrackStatistics;
 
 
 import io.github.zhengfangfang0304.particletracking.simulation.GaussianSpotRenderer;
+import io.github.zhengfangfang0304.particletracking.simulation.MotionMode;
 import io.github.zhengfangfang0304.particletracking.simulation.SimulationConfig;
 import io.github.zhengfangfang0304.particletracking.simulation.SyntheticDataset;
 import io.github.zhengfangfang0304.particletracking.simulation.SyntheticDatasetGenerator;
@@ -55,22 +56,25 @@ import java.io.File;
 import java.io.IOException;
 
 import javax.swing.BorderFactory;
+import javax.swing.BoxLayout;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
+import javax.swing.JComponent;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
-import javax.swing.SwingConstants;
+import javax.swing.Box;
 
 import java.awt.BorderLayout;
 import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.GridLayout;
 import java.awt.Desktop;
+import java.awt.Color;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -92,12 +96,21 @@ public final class ParticleTrackingFrame extends JFrame {
 
     private JComboBox<String> detectionMethodBox;
     private JComboBox<String> exportTypeBox;
+    private JComboBox<String> trackingMethodBox;
     private JCheckBox invertSequenceCheckBox;
 
     private JTextField detectionThresholdField;
     private JTextField localMaxRadiusField;
     private JTextField minDistanceField;
     private JTextField trackingMaxDistanceField;
+
+    private JTextField simulationWidthField;
+    private JTextField simulationHeightField;
+    private JTextField simulationFramesField;
+    private JTextField simulationParticleCountField;
+    private JTextField simulationDiffusionField;
+    private JTextField simulationRandomSeedField;
+    private JComboBox<MotionMode> simulationMotionModeBox;
 
     private final List<Detection> lastDetections =
             new ArrayList<>();
@@ -125,13 +138,6 @@ public final class ParticleTrackingFrame extends JFrame {
                     16
             );
 
-    private final Font titleFont =
-            new Font(
-                    "Microsoft YaHei",
-                    Font.BOLD,
-                    22
-            );
-
     private final JTextArea logArea =
             new JTextArea();
 
@@ -154,43 +160,10 @@ public final class ParticleTrackingFrame extends JFrame {
             ParticleTrackingController controller
     ) {
         SwingUtilities.invokeLater(() -> {
-            int choice =
-                    JOptionPane.showOptionDialog(
-                            null,
-                            "请选择进入方式：",
-                            "单颗粒追踪插件",
-                            JOptionPane.YES_NO_CANCEL_OPTION,
-                            JOptionPane.QUESTION_MESSAGE,
-                            null,
-                            new String[]{
-                                    "设计并生成模拟数据",
-                                    "进入普通分析界面",
-                                    "取消"
-                            },
-                            "进入普通分析界面"
-                    );
+            ParticleTrackingFrame frame =
+                    new ParticleTrackingFrame(controller);
 
-            if (choice == 0) {
-                ParticleTrackingFrame frame =
-                        new ParticleTrackingFrame(controller);
-
-                frame.generateTestImage();
-
-                if (!frame.isVisible()) {
-                    frame.dispose();
-                }
-
-                return;
-            }
-
-            if (choice == 1) {
-                ParticleTrackingFrame frame =
-                        new ParticleTrackingFrame(controller);
-
-                frame.setVisible(true);
-
-                return;
-            }
+            frame.setVisible(true);
         });
     }
 
@@ -204,13 +177,9 @@ public final class ParticleTrackingFrame extends JFrame {
         setLocationRelativeTo(null);
         setLayout(new BorderLayout());
 
-        JLabel title =
-                new JLabel(
-                        "SPTurbo",
-                        SwingConstants.CENTER
-                );
+        JButton simulationDetailsButton = new JButton("Details...");
 
-        title.setFont(titleFont);
+        JButton simulationGenerateButton = new JButton("Generate");
 
         JButton importSequenceButton = new JButton("导入图像序列");
 
@@ -222,9 +191,7 @@ public final class ParticleTrackingFrame extends JFrame {
 
         JButton detectButton = new JButton("识别颗粒");
 
-        JButton trackButton = new JButton("自编简单追踪");
-
-        JButton trackMateButton = new JButton("TrackMate 最近邻");
+        JButton trackButton = new JButton("执行追踪");
 
         JButton analyzeButton = new JButton("轨迹统计");
 
@@ -240,13 +207,14 @@ public final class ParticleTrackingFrame extends JFrame {
 
         JButton[] buttons =
                 {
+                        simulationDetailsButton,
+                        simulationGenerateButton,
                         importSequenceButton,
                         imageButton,
                         importCSVButton,
                         denoiseButton,
                         detectButton,
                         trackButton,
-                        trackMateButton,
                         analyzeButton,
                         msdButton,
                         plotMSDButton,
@@ -290,6 +258,16 @@ public final class ParticleTrackingFrame extends JFrame {
                         }
                 );
 
+        trackingMethodBox =
+                new JComboBox<>(
+                        new String[]{
+                                "Simple Tracking 自编简单追踪",
+                                "TrackMate Nearest Neighbor TrackMate 最近邻"
+                        }
+                );
+
+        trackingMethodBox.setFont(chineseFont);
+
         detectionMethodBox.setFont(chineseFont);
 
         exportTypeBox =
@@ -316,8 +294,38 @@ public final class ParticleTrackingFrame extends JFrame {
         trackingMaxDistanceField =
                 new JTextField("10", 6);
 
+        simulationWidthField =
+                new JTextField("256", 6);
+
+        simulationHeightField =
+                new JTextField("256", 6);
+
+        simulationFramesField =
+                new JTextField("100", 6);
+
+        simulationParticleCountField =
+                new JTextField("8", 6);
+
+        simulationDiffusionField =
+                new JTextField("0.05", 6);
+
+        simulationRandomSeedField =
+                new JTextField("12345", 6);
+
+        simulationMotionModeBox =
+                new JComboBox<>(
+                        MotionMode.values()
+                );
+        simulationMotionModeBox.setFont(chineseFont);
+
         JTextField[] textFields =
                 {
+                        simulationWidthField,
+                        simulationHeightField,
+                        simulationFramesField,
+                        simulationParticleCountField,
+                        simulationDiffusionField,
+                        simulationRandomSeedField,
                         denoiseParameterField,
                         detectionThresholdField,
                         localMaxRadiusField,
@@ -329,46 +337,6 @@ public final class ParticleTrackingFrame extends JFrame {
             textField.setFont(chineseFont);
         }
 
-        JLabel denoiseMethodLabel =
-                new JLabel("降噪方法：");
-
-        JLabel denoiseParameterLabel =
-                new JLabel("降噪参数：");
-
-        JLabel detectionMethodLabel =
-                new JLabel("识别方法：");
-
-        JLabel thresholdLabel =
-                new JLabel("识别阈值：");
-
-        JLabel radiusLabel =
-                new JLabel("局部极大半径：");
-
-        JLabel minDistanceLabel =
-                new JLabel("最小距离：");
-
-        JLabel trackingDistanceLabel =
-                new JLabel("追踪最大距离：");
-
-        JLabel exportTypeLabel =
-                new JLabel("导出类型：");
-
-        JLabel[] labels =
-                {
-                        denoiseMethodLabel,
-                        denoiseParameterLabel,
-                        detectionMethodLabel,
-                        thresholdLabel,
-                        radiusLabel,
-                        minDistanceLabel,
-                        trackingDistanceLabel,
-                        exportTypeLabel
-                };
-
-        for (JLabel label : labels) {
-            label.setFont(chineseFont);
-        }
-
         logArea.setEditable(false);
         logArea.setFont(
                 new Font(
@@ -377,6 +345,10 @@ public final class ParticleTrackingFrame extends JFrame {
                         14
                 )
         );
+       
+        simulationDetailsButton.addActionListener(event -> generateTestImage());
+
+        simulationGenerateButton.addActionListener(event -> generateSimulationFromMainPanel());
 
         importSequenceButton.addActionListener(event -> importImageSequence());
 
@@ -388,9 +360,7 @@ public final class ParticleTrackingFrame extends JFrame {
 
         detectButton.addActionListener(event -> detectParticles());
 
-        trackButton.addActionListener(event -> trackParticles());
-
-        trackMateButton.addActionListener(event -> trackParticlesWithTrackMate());
+      trackButton.addActionListener(event -> runSelectedTrackingMethod());
 
         analyzeButton.addActionListener(event -> analyzeTracks());
 
@@ -404,106 +374,485 @@ public final class ParticleTrackingFrame extends JFrame {
 
         closeButton.addActionListener(event -> dispose());
 
-        JPanel controlPanel =
-                new JPanel();
+        styleNormalButton(importSequenceButton);
+        styleNormalButton(importCSVButton);
+        styleNormalButton(imageButton);
 
-        controlPanel.setLayout(
-                new GridLayout(
-                        6,
-                        1,
-                        10,
-                        10
+        stylePrimaryButton(denoiseButton);
+        stylePrimaryButton(detectButton);
+        stylePrimaryButton(trackButton);
+
+        styleNormalButton(analyzeButton);
+        styleNormalButton(msdButton);
+        styleNormalButton(plotMSDButton);
+        styleNormalButton(diffusionButton);
+        stylePrimaryButton(exportButton);
+        styleNormalButton(closeButton);
+        styleNormalButton(simulationDetailsButton);
+        stylePrimaryButton(simulationGenerateButton);
+
+
+        makeFullWidth(importSequenceButton);
+        makeFullWidth(importCSVButton);
+        makeFullWidth(imageButton);
+        makeFullWidth(invertSequenceCheckBox);
+
+        makeFullWidth(denoiseButton);
+        makeFullWidth(detectButton);
+        makeFullWidth(trackButton);
+        makeFullWidth(analyzeButton);
+        makeFullWidth(msdButton);
+        makeFullWidth(plotMSDButton);
+        makeFullWidth(diffusionButton);
+        makeFullWidth(exportButton);
+        makeFullWidth(closeButton);
+
+        JPanel mainPanel =
+                new JPanel(
+                        new GridLayout(
+                                1,
+                                5,
+                                12,
+                                0
+                        )
+                );
+
+        mainPanel.setBackground(
+                new Color(
+                        245,
+                        247,
+                        250
                 )
         );
 
-        controlPanel.setBorder(
+        mainPanel.setBorder(
                 BorderFactory.createEmptyBorder(
-                        20,
-                        20,
-                        20,
-                        20
+                        14,
+                        14,
+                        14,
+                        14
                 )
         );
 
-        JPanel row1 =
-                new JPanel();
-        row1.add(imageButton);
-        row1.add(denoiseButton);
+        JPanel simulationCard =
+                createSectionCard(
+                        "①",
+                        "Simulation"
+                );
 
-        JPanel importRow =
-                new JPanel();
+        JPanel denoiseCard =
+                createSectionCard(
+                        "②",
+                        "Denoise"
+                );
 
-        importRow.add(importSequenceButton);
-        importRow.add(importCSVButton);
-        importRow.add(invertSequenceCheckBox);
+        JPanel detectionCard =
+                createSectionCard(
+                        "③",
+                        "Detection"
+                );
 
-        JPanel row2 =
-                new JPanel();
+        JPanel trackingCard =
+                createSectionCard(
+                        "④",
+                        "Tracking"
+                );
 
-        row2.add(denoiseMethodLabel);
-        row2.add(denoiseMethodBox);
-        row2.add(denoiseParameterLabel);
-        row2.add(denoiseParameterField);
+        JPanel analysisCard =
+                createSectionCard(
+                        "⑤",
+                        "Analysis / Export"
+                );
 
-        JPanel row3 =
-                new JPanel();
+        /*
+        * 1. Simulation
+        */
+        JPanel simulationContent =
+                createVerticalContentPanel();
 
-        row3.add(detectionMethodLabel);
-        row3.add(detectionMethodBox);
-        row3.add(thresholdLabel);
-        row3.add(detectionThresholdField);
-        row3.add(radiusLabel);
-        row3.add(localMaxRadiusField);
-        row3.add(minDistanceLabel);
-        row3.add(minDistanceField);
-        row3.add(trackingDistanceLabel);
-        row3.add(trackingMaxDistanceField);
+        JLabel essentialSettingsLabel =
+                new JLabel("Essential Settings");
 
-        JPanel row4 =
-                new JPanel();
+        essentialSettingsLabel.setFont(
+                new Font("Microsoft YaHei",Font.BOLD,15));
 
-        row4.add(detectButton);
-        row4.add(trackButton);
-        row4.add(trackMateButton);
-        row4.add(analyzeButton);
-        row4.add(msdButton);
-        row4.add(plotMSDButton);
-        row4.add(diffusionButton);
-        row4.add(exportButton);
-        row4.add(closeButton);
+        essentialSettingsLabel.setForeground(
+                new Color(35,48,70));
 
-        JPanel row5 =
-                new JPanel();
+        simulationContent.add(essentialSettingsLabel);
 
-        row5.add(exportTypeLabel);
-        row5.add(exportTypeBox);
+        simulationContent.add(Box.createVerticalStrut(12));
 
-        controlPanel.add(row1);
-        controlPanel.add(importRow);
-        controlPanel.add(row2);
-        controlPanel.add(row3);
-        controlPanel.add(row4);
-        controlPanel.add(row5);
+        simulationContent.add(
+                createLabelAndComponentRow(
+                        "Width",
+                        simulationWidthField
+                )
+        );
+
+        simulationContent.add(Box.createVerticalStrut(8));
+
+        simulationContent.add(
+                createLabelAndComponentRow(
+                        "Height",
+                        simulationHeightField
+                )
+        );
+
+        simulationContent.add(Box.createVerticalStrut(8));
+
+        simulationContent.add(
+                createLabelAndComponentRow(
+                        "Frames",
+                        simulationFramesField
+                )
+        );
+
+        simulationContent.add(Box.createVerticalStrut(8));
+
+        simulationContent.add(
+                createLabelAndComponentRow(
+                        "Particles",
+                        simulationParticleCountField
+                )
+        );
+
+        simulationContent.add(Box.createVerticalStrut(8));
+
+        simulationContent.add(
+                createLabelAndComponentRow(
+                        "Motion",
+                        simulationMotionModeBox
+                )
+        );
+
+        simulationContent.add(Box.createVerticalStrut(8));
+
+        simulationContent.add(
+                createLabelAndComponentRow(
+                        "D μm²/s",
+                        simulationDiffusionField
+                )
+        );
+
+
+        simulationContent.add(Box.createVerticalGlue());
+
+        JPanel simulationButtonPanel =
+                new JPanel(new BorderLayout(12,0));
+
+        simulationButtonPanel.setBackground(Color.WHITE);
+
+        simulationDetailsButton.setPreferredSize(
+                new Dimension(
+                        110,
+                        38
+                )
+        );
+
+        simulationGenerateButton.setPreferredSize(
+                new Dimension(
+                        130,
+                        42
+                )
+        );
+
+        simulationDetailsButton.setMaximumSize(
+                new Dimension(
+                        110,
+                        38
+                )
+        );
+
+        simulationGenerateButton.setMaximumSize(
+                new Dimension(
+                        130,
+                        42
+                )
+        );
+
+        simulationButtonPanel.setMaximumSize(
+                new Dimension(
+                        Integer.MAX_VALUE,
+                        45
+                )
+        );
+
+        simulationButtonPanel.add(
+                simulationDetailsButton,
+                BorderLayout.WEST
+        );
+
+        simulationButtonPanel.add(
+                simulationGenerateButton,
+                BorderLayout.EAST
+        );
+
+        simulationContent.add(
+                Box.createVerticalStrut(18)
+        );
+
+        simulationContent.add(
+                simulationButtonPanel
+        );
+
+        simulationCard.add(simulationContent,BorderLayout.CENTER);
+
+        /*
+        * 2. Denoise
+        */
+        JPanel denoiseContent =
+                createVerticalContentPanel();
+
+        denoiseContent.add(
+                createLabelAndComponentRow(
+                        "Method",
+                        denoiseMethodBox
+                )
+        );
+
+        denoiseContent.add(Box.createVerticalStrut(10));
+
+        denoiseContent.add(
+                createLabelAndComponentRow(
+                        "Parameter",
+                        denoiseParameterField
+                )
+        );
+
+        denoiseContent.add(Box.createVerticalStrut(16));
+        denoiseContent.add(denoiseButton);
+
+        denoiseCard.add(
+                denoiseContent,
+                BorderLayout.CENTER
+        );
+
+        /*
+        * 3. Detection
+        */
+        JPanel detectionContent =
+                createVerticalContentPanel();
+
+        detectionContent.add(
+                createLabelAndComponentRow(
+                        "Method",
+                        detectionMethodBox
+                )
+        );
+
+        detectionContent.add(Box.createVerticalStrut(10));
+
+        detectionContent.add(
+                createLabelAndComponentRow(
+                        "Threshold",
+                        detectionThresholdField
+                )
+        );
+
+        detectionContent.add(Box.createVerticalStrut(10));
+
+        detectionContent.add(
+                createLabelAndComponentRow(
+                        "Local Max Radius",
+                        localMaxRadiusField
+                )
+        );
+
+        detectionContent.add(Box.createVerticalStrut(10));
+
+        detectionContent.add(
+                createLabelAndComponentRow(
+                        "Min Distance",
+                        minDistanceField
+                )
+        );
+
+        detectionContent.add(Box.createVerticalStrut(16));
+        detectionContent.add(detectButton);
+
+        detectionCard.add(
+                detectionContent,
+                BorderLayout.CENTER
+        );
+
+        /*
+        * 4. Tracking
+        */
+        JPanel trackingContent =
+                createVerticalContentPanel();
+
+        trackingContent.add(
+                createLabelAndComponentRow(
+                        "Method",
+                        trackingMethodBox
+                )
+        );
+
+        trackingContent.add(
+                Box.createVerticalStrut(10)
+        );
+
+        trackingContent.add(
+                createLabelAndComponentRow(
+                        "Max Distance",
+                        trackingMaxDistanceField
+                )
+        );
+
+        trackingContent.add(
+                Box.createVerticalStrut(16)
+        );
+
+        trackingContent.add(trackButton);
+
+        trackingCard.add(
+                trackingContent,
+                BorderLayout.CENTER
+        );
+
+
+
+        /*
+        * 5. Analysis / Export
+        */
+        JPanel analysisContent =
+                createVerticalContentPanel();
+
+        analysisContent.add(analyzeButton);
+        analysisContent.add(Box.createVerticalStrut(10));
+        analysisContent.add(msdButton);
+        analysisContent.add(Box.createVerticalStrut(10));
+        analysisContent.add(plotMSDButton);
+        analysisContent.add(Box.createVerticalStrut(10));
+        analysisContent.add(diffusionButton);
+
+        analysisContent.add(Box.createVerticalStrut(16));
+
+        analysisContent.add(
+                createLabelAndComponentRow(
+                        "Export Type",
+                        exportTypeBox
+                )
+        );
+
+        analysisContent.add(Box.createVerticalStrut(16));
+        analysisContent.add(exportButton);
+        analysisContent.add(Box.createVerticalStrut(10));
+        analysisContent.add(closeButton);
+
+        analysisCard.add(
+                analysisContent,
+                BorderLayout.CENTER
+        );
+
+        mainPanel.add(simulationCard);
+        mainPanel.add(denoiseCard);
+        mainPanel.add(detectionCard);
+        mainPanel.add(trackingCard);
+        mainPanel.add(analysisCard);
+
+        JScrollPane mainScrollPane =
+                new JScrollPane(mainPanel);
+
+        mainScrollPane.setBorder(null);
 
         JScrollPane logScrollPane =
                 new JScrollPane(logArea);
 
         logScrollPane.setPreferredSize(
                 new Dimension(
-                        800,
-                        150
+                        1300,
+                        120
                 )
         );
 
         logScrollPane.setBorder(
                 BorderFactory.createTitledBorder(
-                        "日志区域"
+                        "Log"
                 )
         );
 
-        add(title, BorderLayout.NORTH);
-        add(controlPanel, BorderLayout.CENTER);
+        getContentPane().setBackground(
+                new Color(
+                        245,
+                        247,
+                        250
+                )
+        );
+
+        add(mainScrollPane, BorderLayout.CENTER);
         add(logScrollPane, BorderLayout.SOUTH);
+    }
+
+    private JPanel createSectionCard(String number, String titleText) {
+        JPanel card = new JPanel();
+        card.setLayout(new BorderLayout(10, 10));
+        card.setBackground(Color.WHITE);
+        card.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(220, 226, 235), 1),
+                BorderFactory.createEmptyBorder(14, 18, 14, 18)
+        ));
+
+        JLabel title = new JLabel(number + "  " + titleText);
+        title.setFont(new Font("Microsoft YaHei", Font.BOLD, 17));
+        title.setForeground(new Color(20, 105, 210));
+
+        card.add(title, BorderLayout.NORTH);
+
+        return card;
+    }
+
+    private JPanel createVerticalContentPanel() {
+        JPanel panel = new JPanel();
+        panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
+        panel.setBackground(Color.WHITE);
+        return panel;
+    }
+
+    private JPanel createLabelAndComponentRow(String labelText, JComponent component) {
+        JPanel row = new JPanel(new BorderLayout(8, 4));
+        row.setBackground(Color.WHITE);
+        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 42));
+
+        JLabel label = new JLabel(labelText);
+        label.setFont(chineseFont);
+        label.setForeground(new Color(35, 48, 70));
+
+        component.setFont(chineseFont);
+
+        row.add(label, BorderLayout.WEST);
+        row.add(component, BorderLayout.CENTER);
+
+        return row;
+    }
+
+    private void stylePrimaryButton(JButton button) {
+        button.setFont(chineseFont);
+        button.setFocusPainted(false);
+        button.setBackground(new Color(25, 118, 210));
+        button.setForeground(Color.WHITE);
+        button.setBorder(BorderFactory.createEmptyBorder(8, 14, 8, 14));
+    }
+
+    private void styleNormalButton(JButton button) {
+        button.setFont(chineseFont);
+        button.setFocusPainted(false);
+        button.setBackground(new Color(245, 248, 252));
+        button.setForeground(new Color(30, 45, 70));
+    }
+
+    private void makeFullWidth(JComponent component) {
+        component.setMaximumSize(
+                new Dimension(
+                        Integer.MAX_VALUE,
+                        component.getPreferredSize().height
+                )
+        );
+
+        component.setAlignmentX(
+                JComponent.LEFT_ALIGNMENT
+        );
     }
     
     private void readCurrentImage() {
@@ -732,6 +1081,146 @@ public final class ParticleTrackingFrame extends JFrame {
                 null;
     }
 
+    private SimulationConfig buildSimulationConfigFromMainPanel() {
+        SimulationConfig config =
+                SimulationConfig.defaultConfig();
+
+        config.width =
+                Integer.parseInt(
+                        simulationWidthField.getText()
+                                .trim()
+                );
+
+        config.height =
+                Integer.parseInt(
+                        simulationHeightField.getText()
+                                .trim()
+                );
+
+        config.frames =
+                Integer.parseInt(
+                        simulationFramesField.getText()
+                                .trim()
+                );
+
+        config.particleCount =
+                Integer.parseInt(
+                        simulationParticleCountField.getText()
+                                .trim()
+                );
+
+        config.useDensity =
+                false;
+
+        config.diffusionCoefficientUm2PerSecond =
+                Double.parseDouble(
+                        simulationDiffusionField.getText()
+                                .trim()
+                );
+
+        config.randomSeed =
+                Long.parseLong(
+                        simulationRandomSeedField.getText()
+                                .trim()
+                );
+
+        config.motionMode =
+                (MotionMode) simulationMotionModeBox.getSelectedItem();
+
+        if (config.motionMode == null) {
+            config.motionMode =
+                    MotionMode.FREE_BROWNIAN;
+        }
+
+        return config;
+    }
+
+    private void generateSimulationFromMainPanel() {
+        try {
+            SimulationConfig config =
+                    buildSimulationConfigFromMainPanel();
+
+            SyntheticDatasetGenerator generator =
+                    new SyntheticDatasetGenerator();
+
+            SyntheticDataset dataset =
+                    generator.generate(
+                            config
+                    );
+
+            GaussianSpotRenderer renderer =
+                    new GaussianSpotRenderer();
+
+            ImagePlus image =
+                    renderer.render(
+                            dataset,
+                            config
+                    );
+
+            image.show();
+
+            lastDetections.clear();
+            lastTracks.clear();
+            controller.clearSession();
+
+            setSyntheticDatasetContext(
+                    dataset,
+                    config,
+                    null,
+                    null
+            );
+
+            logArea.append(
+                    "已从 Simulation 区块生成模拟数据。\n"
+                            + "图像尺寸: "
+                            + config.width
+                            + " × "
+                            + config.height
+                            + "\n"
+                            + "帧数: "
+                            + config.frames
+                            + "\n"
+                            + "粒子数: "
+                            + config.getResolvedParticleCount()
+                            + "\n"
+                            + "运动模式: "
+                            + config.motionMode
+                            + "\n"
+                            + "扩散系数: "
+                            + config.diffusionCoefficientUm2PerSecond
+                            + " μm²/s\n"
+                            + "随机种子: "
+                            + config.randomSeed
+                            + "\n"
+                            + "真实检测点数量: "
+                            + dataset.size()
+                            + "\n\n"
+            );
+
+            showPostGenerationOptions(
+                    image,
+                    dataset,
+                    config,
+                    null,
+                    null
+            );
+
+        } catch (NumberFormatException ex) {
+            logArea.append(
+                    "Simulation 参数输入错误，请检查 Width、Height、Frames、Particles 或 D是否为数字。\n\n"
+            );
+
+        } catch (Exception ex) {
+            logArea.append(
+                    "Simulation 区块生成数据失败: "
+                            + ex.getMessage()
+                            + "\n\n"
+            );
+
+            ex.printStackTrace();
+        }
+    }
+
     private void setSyntheticDatasetContext(
             SyntheticDataset dataset,
             SimulationConfig config,
@@ -905,7 +1394,7 @@ public final class ParticleTrackingFrame extends JFrame {
                         + "1. 点击“检查当前图像”确认当前图像。\n"
                         + "2. 点击“执行降噪”，可选。\n"
                         + "3. 点击“识别颗粒”。\n"
-                        + "4. 点击“自编简单追踪”或“TrackMate 最近邻”。\n"
+                        + "4. 在 Tracking 的 Method 中选择追踪方法，然后点击“执行追踪”。\n"
                         + "5. 点击“轨迹统计 / 计算 MSD / 计算扩散系数D”。\n\n"
         );
     }
@@ -1611,6 +2100,27 @@ public final class ParticleTrackingFrame extends JFrame {
         }
     }
 
+    private void runSelectedTrackingMethod() {
+        String selectedMethod =
+                (String) trackingMethodBox.getSelectedItem();
+
+        if (selectedMethod == null) {
+            logArea.append(
+                    "请选择追踪方法。\n\n"
+            );
+
+            return;
+        }
+
+        if (selectedMethod.contains("TrackMate")) {
+            trackParticlesWithTrackMate();
+
+            return;
+        }
+
+        trackParticles();
+    }
+
     private void trackParticlesWithTrackMate() {
         try {
             if (lastDetections.isEmpty()) {
@@ -1816,7 +2326,7 @@ public final class ParticleTrackingFrame extends JFrame {
         try {
             if (lastTracks.isEmpty()) {
                 logArea.append(
-                        "还没有追踪结果，请先点击“自编简单追踪”或“TrackMate 最近邻”。\n\n"
+                        "还没有追踪结果，请先在 Tracking 的 Method 中选择追踪方法，并点击“执行追踪”。\n\n"
                 );
                 return;
             }
@@ -1939,7 +2449,7 @@ public final class ParticleTrackingFrame extends JFrame {
         try {
             if (lastTracks.isEmpty()) {
                 logArea.append(
-                        "还没有追踪结果，请先点击“自编简单追踪”或“TrackMate 最近邻”。\n\n"
+                        "还没有追踪结果，请先在 Tracking 的 Method 中选择追踪方法，并点击“执行追踪”。\n\n"
                 );
                 return;
             }
@@ -2036,7 +2546,7 @@ public final class ParticleTrackingFrame extends JFrame {
         try {
             if (lastTracks.isEmpty()) {
                 logArea.append(
-                        "还没有追踪结果，请先点击“自编简单追踪”或“TrackMate 最近邻”。\n\n"
+                        "还没有追踪结果，请先在 Tracking 的 Method 中选择追踪方法，并点击“执行追踪”。\n\n"
                 );
                 return;
             }
@@ -2111,7 +2621,7 @@ public final class ParticleTrackingFrame extends JFrame {
         try {
             if (lastTracks.isEmpty()) {
                 logArea.append(
-                        "还没有追踪结果，请先点击“自编简单追踪”或“TrackMate 最近邻”。\n\n"
+                        "还没有追踪结果，请先在 Tracking 的 Method 中选择追踪方法，并点击“执行追踪”。\n\n"
                 );
                 return;
             }
@@ -2278,7 +2788,7 @@ public final class ParticleTrackingFrame extends JFrame {
         try {
             if (lastTracks.isEmpty()) {
                 logArea.append(
-                        "还没有追踪结果，请先点击“自编简单追踪”或“TrackMate 最近邻”。\n\n"
+                        "还没有追踪结果，请先在 Tracking 的 Method 中选择追踪方法，并点击“执行追踪”。\n\n"
                 );
                 return;
             }
@@ -2329,7 +2839,7 @@ public final class ParticleTrackingFrame extends JFrame {
         try {
             if (lastTracks.isEmpty()) {
                 logArea.append(
-                        "还没有追踪结果，请先点击“自编简单追踪”或“TrackMate 最近邻”。\n\n"
+                        "还没有追踪结果，请先在 Tracking 的 Method 中选择追踪方法，并点击“执行追踪”。\n\n"
                 );
                 return;
             }
@@ -2385,7 +2895,7 @@ public final class ParticleTrackingFrame extends JFrame {
         try {
             if (lastTracks.isEmpty()) {
                 logArea.append(
-                        "还没有追踪结果，请先点击“自编简单追踪”或“TrackMate 最近邻”。\n\n"
+                        "还没有追踪结果，请先在 Tracking 的 Method 中选择追踪方法，并点击“执行追踪”。\n\n"
                 );
                 return;
             }
@@ -2441,7 +2951,7 @@ public final class ParticleTrackingFrame extends JFrame {
         try {
             if (lastTracks.isEmpty()) {
                 logArea.append(
-                        "还没有追踪结果，请先点击“自编简单追踪”或“TrackMate 最近邻”。\n\n"
+                        "还没有追踪结果，请先在 Tracking 的 Method 中选择追踪方法，并点击“执行追踪”。\n\n"
                 );
                 return;
             }
