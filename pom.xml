@@ -71,6 +71,13 @@
             <version>8.1.6</version>
         </dependency>
 
+         <!-- OpenCV Java 绑定 (含本地库自动加载) -->
+         <dependency>
+             <groupId>org.openpnp</groupId>
+             <artifactId>opencv</artifactId>
+             <version>4.9.0-0</version>
+         </dependency>
+
     </dependencies>
 
     <build>
