@@ -18,7 +18,7 @@ import java.awt.image.DataBufferByte;
 public final class BilateralDenoiser implements ImageDenoiser {
 
     static {
-        // ✅ 使用 OpenCV 官方加载器，自动提取并加载本地库
+        // 使用 OpenCV 官方加载器，自动提取并加载本地库
         OpenCV.loadLocally();
     }
 
