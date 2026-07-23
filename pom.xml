@@ -1,87 +1,94 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- xml的版本和语言，方便中文字体 -->
-
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
          https://maven.apache.org/xsd/maven-4.0.0.xsd">
-<!-- 当前 XML 中的 <project>等标签，属于 Maven POM 4.0.0 这套语法，标识XML标签属于哪套规范 -->
-<!-- 先声明一个前缀xsi,告诉XML编辑器，xsi开头的属性来自XML Schema规范-->
-<!-- 告诉VScode，Maven POM的语法规则可以通过XSD结构描述来检查（拼写错误之类）-->
 
     <modelVersion>4.0.0</modelVersion>
-<!-- 当前POM使用Maven POM 4.0.0 模型-->
-
-    <!-- 你自己的项目坐标 -->
     <groupId>io.github.zhengfangfang0304</groupId>
     <artifactId>imagej-particle-tracking</artifactId>
     <version>0.1.0-SNAPSHOT</version>
-<!--groupId表示项目所属的组织或开发者命名空间-->
-<!--artifactId表示项目名称artifactID和version参与组成jar的文件名-->
-<!--version表示项目版本，-SNAPSHOT表示快照版本,临时版本，正式发布需要去掉-->
- <!-- 这是Maven默认规则，但为了更容易被ImageJ/Fiji菜单识别，最好让最终jar名字中含有下划线
- 但Maven坐标和最终jar文件名可以不完全一样，所以我们通过finalName改变最终生成的jar文件名 -->
-
-
-
-
-
-    <!-- 明确说明最终生成的是 jar 文件 -->
     <packaging>jar</packaging>
 
-    <!-- 项目的显示名称和说明 -->
     <name>SPTurbo</name>
-    <description>
-        A GUI plugin for single-particle detection and tracking in ImageJ/Fiji.
-    </description>
+    <description>A GUI plugin for single-particle detection and tracking in ImageJ/Fiji.</description>
 
-    <!-- 项目编译配置 ，版本，字符编码-->
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-
         <maven.compiler.release>21</maven.compiler.release>
     </properties>
-    <!-- Maven compiler Plugin现在更推荐使用release参数，但目前这套source＋target参数仍然可以使用，release参数在Maven 3.6.0以上才支持 -->
 
 
-    <!-- 告诉 Maven 去哪里查找 SciJava、Fiji 和 TrackMate 。不是声明使用哪个库而是告诉maven去哪个服务器找库-->
     <repositories>
-        <repository><!-- 一个具体的Maven仓库配置-->
-            <id>scijava.public</id><!--给下载地址取个名字-->
-            <url>
-                https://maven.scijava.org/content/groups/public<!--仓库实际地址-->
-            </url>
+        
+        <repository>
+            <id>scijava.public</id>
+            <url>https://maven.scijava.org/content/groups/public</url>
+        </repository>
+        <repository>
+            <id>ome.releases</id>
+            <url>https://maven.ome.io/content/repositories/releases</url>
+        </repository>
+        
+        <repository>
+            <id>maven-central</id>
+            <url>https://repo.maven.apache.org/maven2</url>
         </repository>
     </repositories>
 
-    <!-- 项目使用的外部 Java 库 -->
-    <dependencies> <!-- 复数dependencies表示依赖集合，里面每一个具体依赖使用dependency -->
+    <dependencies>
+        <!-- OpenCV（如需使用） -->
+        <dependency>
+            <groupId>org.openpnp</groupId>
+            <artifactId>opencv</artifactId>
+            <version>4.9.0-0</version>
+        </dependency>
 
-        <!-- ImageJ 1.x API -->
+        <!-- BoofCV（小波滤波所需） -->
+        <dependency>
+            <groupId>org.boofcv</groupId>
+            <artifactId>boofcv-core</artifactId>
+            <version>1.2.0</version>
+        </dependency>
+
+        <!-- 以下依赖暂时注释，避免卡在 SciJava 仓库 -->
+
         <dependency>
             <groupId>net.imagej</groupId>
             <artifactId>ij</artifactId>
             <version>1.54p</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>sc.fiji</groupId>
+                    <artifactId>bigdataviewer-core</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>net.imagej</groupId>
+                    <artifactId>imagej-deprecated</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
 
-        <!-- TrackMate 8 API -->
         <dependency>
             <groupId>sc.fiji</groupId>
             <artifactId>TrackMate</artifactId>
-            <version>8.1.6</version>
+            <version>7.0.0</version>
         </dependency>
-
-         <!-- OpenCV Java 绑定 (含本地库自动加载) -->
-         <dependency>
-             <groupId>org.openpnp</groupId>
-             <artifactId>opencv</artifactId>
-             <version>4.9.0-0</version>
-         </dependency>
 
     </dependencies>
 
     <build>
         <finalName>SPTurbo_-${project.version}</finalName>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.11.0</version>
+                <configuration>
+                    <release>21</release>
+                </configuration>
+            </plugin>
+        </plugins>
     </build>
-    
+
 </project>
