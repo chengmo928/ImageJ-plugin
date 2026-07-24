@@ -3,8 +3,7 @@ package io.github.zhengfangfang0304.particletracking.preprocessing;
 import ij.IJ;
 import ij.ImagePlus;
 import ij.ImageStack;
-import ij.process.ImageProcessor;
-import ij.process.ColorProcessor;
+import ij.process.*;
 import nu.pattern.OpenCV;
 import org.opencv.core.Mat;
 import org.opencv.core.CvType;
@@ -15,16 +14,16 @@ import java.awt.image.DataBufferByte;
 
 /**
  * 基于 OpenCV 双边滤波的降噪器。
- * 实现 ImageDenoiser 接口，可无缝接入粒子追踪处理管道。
+ * 支持 8 位和 16 位灰度图像，以及 8 位彩色图像。
  * <p>
- * 参数说明：{@code parameter} 作为 sigmaColor，sigmaSpace 自动取 parameter/2，
- * 滤波窗口直径 d 自适应为 max(3, ceil(sigmaColor * 2))。
+ * 参数说明：{@code parameter} 作为 sigmaColor 的基准值（针对 8 位图）。
+ * 对于 16 位图，会根据图像实际最大值自动缩放 sigmaColor。
+ * sigmaSpace 自动取 sigmaColor / 2，滤波窗口直径 d 自适应计算。
  * </p>
  */
 public final class BilateralDenoiser implements ImageDenoiser {
 
     static {
-        // 使用 OpenCV 官方加载器，自动提取并加载本地库
         OpenCV.loadLocally();
     }
 
@@ -35,7 +34,6 @@ public final class BilateralDenoiser implements ImageDenoiser {
 
     @Override
     public ImagePlus denoise(ImagePlus image, double parameter) {
-        // ----- 参数校验 -----
         if (image == null) {
             throw new IllegalArgumentException("输入图像不能为 null。");
         }
@@ -45,107 +43,132 @@ public final class BilateralDenoiser implements ImageDenoiser {
             );
         }
 
-        // ----- 参数映射 -----
-        double sigmaColor = parameter;
-        double sigmaSpace = parameter / 2.0;
+        // 获取第一帧的位深度和最大值（用于参数缩放）
+        ImageProcessor firstIp = image.getProcessor();
+        int bitDepth = firstIp.getBitDepth();
+        double maxVal = firstIp.getMax(); // 实际最大值
+        double scale = 1.0;
+        if (bitDepth == 16 && maxVal > 0) {
+            scale = maxVal / 255.0; // 将 8 位范围的参数缩放到 16 位范围
+        } else if (bitDepth == 32) {
+            // 对于 32 位，可能需要更复杂的缩放，这里简单处理
+            scale = maxVal / 255.0;
+        }
+        // 对于 8 位，scale 保持 1.0
+
+        // 对参数进行缩放
+        double sigmaColor = parameter * scale;
+        double sigmaSpace = sigmaColor / 2.0;
         int d = (int) Math.max(3, Math.ceil(sigmaColor * 2));
 
-        // ----- 复制图像并准备处理 -----
+        // 可选：打印缩放信息，便于调试
+        IJ.log("Bilateral: 位深度=" + bitDepth + ", maxVal=" + maxVal + ", scale=" + scale + ", 实际sigmaColor=" + sigmaColor);
+
         ImagePlus denoised = image.duplicate();
         denoised.setTitle(image.getTitle() + " - Bilateral Denoised");
 
         ImageStack stack = denoised.getStack();
         int totalSlices = stack.getSize();
 
-        // ----- 逐层处理 -----
         for (int slice = 1; slice <= totalSlices; slice++) {
-            ImageProcessor processor = stack.getProcessor(slice);
+            ImageProcessor ip = stack.getProcessor(slice);
 
-            // 转换 ImageProcessor -> OpenCV Mat
-            Mat srcMat = imageProcessorToMat(processor);
-            Mat dstMat = new Mat();
-
-            try {
-                // 双边滤波
-                Imgproc.bilateralFilter(srcMat, dstMat, d, sigmaColor, sigmaSpace);
-
-                // 转换 OpenCV Mat -> ImageProcessor
-                ImageProcessor resultProcessor = matToImageProcessor(dstMat, processor);
-                stack.setProcessor(resultProcessor, slice);
-
-            } finally {
-                // 确保释放本地内存
-                srcMat.release();
-                dstMat.release();
+            if (ip instanceof ColorProcessor) {
+                Mat srcMat = colorProcessorToMat((ColorProcessor) ip);
+                Mat dstMat = new Mat();
+                try {
+                    Imgproc.bilateralFilter(srcMat, dstMat, d, sigmaColor, sigmaSpace);
+                    ColorProcessor result = matToColorProcessor(dstMat);
+                    stack.setProcessor(result, slice);
+                } finally {
+                    srcMat.release();
+                    dstMat.release();
+                }
+            } else {
+                // 灰度图像（8/16/32 位）
+                int depth = ip.getBitDepth();
+                Mat srcMat = grayProcessorToMat(ip, depth);
+                Mat dstMat = new Mat();
+                try {
+                    Imgproc.bilateralFilter(srcMat, dstMat, d, sigmaColor, sigmaSpace);
+                    ImageProcessor result = matToGrayProcessor(dstMat, depth, ip.getWidth(), ip.getHeight());
+                    stack.setProcessor(result, slice);
+                } finally {
+                    srcMat.release();
+                    dstMat.release();
+                }
             }
 
-            // 显示进度（与 MedianDenoiser 一致）
             IJ.showProgress(slice, totalSlices);
         }
 
-        IJ.showProgress(1.0); // 完成进度
-
+        IJ.showProgress(1.0);
         return denoised;
     }
 
+    // ---------- 彩色转换 ----------
+    private Mat colorProcessorToMat(ColorProcessor cp) {
+        BufferedImage bi = cp.getBufferedImage();
+        int w = bi.getWidth(), h = bi.getHeight();
+        byte[] data = ((DataBufferByte) bi.getRaster().getDataBuffer()).getData();
+        Mat mat = new Mat(h, w, CvType.CV_8UC3);
+        mat.put(0, 0, data);
+        return mat;
+    }
 
-    //  私有转换工具方法（可考虑提取到公共工具类中复用）
-    /**
-     * 将 ImageJ 的 ImageProcessor 转换为 OpenCV Mat。
-     * 支持 8 位灰度图像和 8 位 RGB 彩色图像。
-     *
-     * @param ip ImageProcessor 实例
-     * @return 对应的 Mat 对象（需调用者负责 release）
-     */
-    private Mat imageProcessorToMat(ImageProcessor ip) {
-        BufferedImage bi = ip.getBufferedImage();
-        int width = bi.getWidth();
-        int height = bi.getHeight();
+    private ColorProcessor matToColorProcessor(Mat mat) {
+        int w = mat.cols(), h = mat.rows();
+        byte[] data = new byte[w * h * 3];
+        mat.get(0, 0, data);
+        BufferedImage bi = new BufferedImage(w, h, BufferedImage.TYPE_3BYTE_BGR);
+        bi.getRaster().setDataElements(0, 0, w, h, data);
+        return new ColorProcessor(bi);
+    }
 
-        if (bi.getType() == BufferedImage.TYPE_BYTE_GRAY) {
-            byte[] data = ((DataBufferByte) bi.getRaster().getDataBuffer()).getData();
-            Mat mat = new Mat(height, width, CvType.CV_8UC1);
+    // ---------- 灰度转换（支持 8/16/32 位） ----------
+    private Mat grayProcessorToMat(ImageProcessor ip, int bitDepth) {
+        int w = ip.getWidth(), h = ip.getHeight();
+        if (bitDepth == 8) {
+            byte[] data = (byte[]) ip.getPixels();
+            Mat mat = new Mat(h, w, CvType.CV_8UC1);
+            mat.put(0, 0, data);
+            return mat;
+        } else if (bitDepth == 16) {
+            short[] data = (short[]) ip.getPixels();
+            Mat mat = new Mat(h, w, CvType.CV_16UC1);
+            mat.put(0, 0, data);
+            return mat;
+        } else if (bitDepth == 32) {
+            float[] data = (float[]) ip.getPixels();
+            Mat mat = new Mat(h, w, CvType.CV_32FC1);
             mat.put(0, 0, data);
             return mat;
         } else {
-            // 若为彩色，按 3 通道 BGR 处理（默认 ImageJ 彩色为 TYPE_3BYTE_BGR）
-            byte[] data = ((DataBufferByte) bi.getRaster().getDataBuffer()).getData();
-            Mat mat = new Mat(height, width, CvType.CV_8UC3);
-            mat.put(0, 0, data);
-            return mat;
+            throw new IllegalArgumentException("不支持的位深度: " + bitDepth);
         }
     }
 
-    /**
-     * 将 OpenCV Mat 转换回 ImageJ 的 ImageProcessor。
-     * 根据 Mat 通道数自动选择灰度或彩色，并使用传入的模板创建同类型处理器。
-     *
-     * @param mat      源 Mat（不得为 null）
-     * @param template 用于创建新处理器的模板（提供尺寸和类型）
-     * @return 转换后的 ImageProcessor
-     */
-    private ImageProcessor matToImageProcessor(Mat mat, ImageProcessor template) {
-        int width = mat.cols();
-        int height = mat.rows();
-        int channels = mat.channels();
-
-        BufferedImage bi;
-        if (channels == 3) {
-            // 彩色图像：直接创建 ColorProcessor
-            byte[] data = new byte[width * height * 3];
-            mat.get(0, 0, data);
-            bi = new BufferedImage(width, height, BufferedImage.TYPE_3BYTE_BGR);
-            bi.getRaster().setDataElements(0, 0, width, height, data);
-            return new ColorProcessor(bi);
-        } else {
-            // 灰度图像
+    private ImageProcessor matToGrayProcessor(Mat mat, int bitDepth, int width, int height) {
+        if (bitDepth == 8) {
             byte[] data = new byte[width * height];
             mat.get(0, 0, data);
-            bi = new BufferedImage(width, height, BufferedImage.TYPE_BYTE_GRAY);
-            bi.getRaster().setDataElements(0, 0, width, height, data);
-            ImageProcessor result = template.createProcessor(width, height);
-            result.setPixels(((DataBufferByte) bi.getRaster().getDataBuffer()).getData());
-            return result;
+            ByteProcessor bp = new ByteProcessor(width, height);
+            bp.setPixels(data);
+            return bp;
+        } else if (bitDepth == 16) {
+            short[] data = new short[width * height];
+            mat.get(0, 0, data);
+            ShortProcessor sp = new ShortProcessor(width, height);
+            sp.setPixels(data);
+            return sp;
+        } else if (bitDepth == 32) {
+            float[] data = new float[width * height];
+            mat.get(0, 0, data);
+            FloatProcessor fp = new FloatProcessor(width, height);
+            fp.setPixels(data);
+            return fp;
+        } else {
+            throw new IllegalArgumentException("不支持的位深度: " + bitDepth);
         }
     }
 }
