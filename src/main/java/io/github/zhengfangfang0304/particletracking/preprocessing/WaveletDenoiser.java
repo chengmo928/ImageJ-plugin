@@ -9,6 +9,7 @@ import ij.IJ;
 import ij.ImagePlus;
 import ij.ImageStack;
 import ij.process.ImageProcessor;
+import ij.process.ColorProcessor;
 
 import java.awt.image.BufferedImage;
 
@@ -68,14 +69,15 @@ public final class WaveletDenoiser implements ImageDenoiser {
             }
 
             // 3. BufferedImage → ImageProcessor
-            ImageProcessor resultProcessor = processor.createProcessor(
-                    dstBi.getWidth(), dstBi.getHeight()
-            );
-            // 直接将 BufferedImage 的像素数据设置到 processor
-            resultProcessor.setPixels(
+            ImageProcessor resultProcessor;
+            if (processor instanceof ColorProcessor) {
+                resultProcessor = new ColorProcessor(dstBi);
+            } else {
+                resultProcessor = processor.createProcessor(dstBi.getWidth(), dstBi.getHeight());
+                resultProcessor.setPixels(
                     ((java.awt.image.DataBufferByte) dstBi.getRaster().getDataBuffer()).getData()
-            );
-            // 若为 16 位灰度，需额外处理，但这里假设为 8 位
+                );
+            }
             stack.setProcessor(resultProcessor, slice);
 
             // 显示进度
