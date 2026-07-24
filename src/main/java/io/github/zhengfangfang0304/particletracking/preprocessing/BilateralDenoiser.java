@@ -4,6 +4,7 @@ import ij.IJ;
 import ij.ImagePlus;
 import ij.ImageStack;
 import ij.process.ImageProcessor;
+import ij.process.ColorProcessor;
 import nu.pattern.OpenCV;
 import org.opencv.core.Mat;
 import org.opencv.core.CvType;
@@ -130,20 +131,21 @@ public final class BilateralDenoiser implements ImageDenoiser {
 
         BufferedImage bi;
         if (channels == 3) {
+            // 彩色图像：直接创建 ColorProcessor
             byte[] data = new byte[width * height * 3];
             mat.get(0, 0, data);
             bi = new BufferedImage(width, height, BufferedImage.TYPE_3BYTE_BGR);
             bi.getRaster().setDataElements(0, 0, width, height, data);
+            return new ColorProcessor(bi);
         } else {
+            // 灰度图像
             byte[] data = new byte[width * height];
             mat.get(0, 0, data);
             bi = new BufferedImage(width, height, BufferedImage.TYPE_BYTE_GRAY);
             bi.getRaster().setDataElements(0, 0, width, height, data);
+            ImageProcessor result = template.createProcessor(width, height);
+            result.setPixels(((DataBufferByte) bi.getRaster().getDataBuffer()).getData());
+            return result;
         }
-
-        // 用模板创建相同类型处理器，并直接设置像素字节数组
-        ImageProcessor result = template.createProcessor(width, height);
-        result.setPixels(((DataBufferByte) bi.getRaster().getDataBuffer()).getData());
-        return result;
     }
 }
