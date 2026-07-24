@@ -3,18 +3,15 @@ package io.github.zhengfangfang0304.particletracking.preprocessing;
 import ij.IJ;
 import ij.ImagePlus;
 import ij.ImageStack;
-import ij.process.ImageProcessor;
-
-import java.awt.image.BufferedImage;
-import java.awt.image.DataBufferByte;
+import ij.process.*;
 
 /**
- * 非局部均值 (Non-Local Means) 降噪器 - 手动实现（纯 Java）
- * 实现 ImageDenoiser 接口，可无缝接入粒子追踪处理管道。
+ * 非局部均值 (NLM) 降噪器 
+ * 支持 8 位和 16 位灰度图像（彩色自动转灰度）。
  * <p>
- * 参数说明：{@code parameter} 作为滤波强度 h，推荐范围 10~30。
- * 搜索半径固定为 15，块半径固定为 3，可取得较好平衡。
- * 仅支持灰度图像（彩色图像会自动转换为灰度处理）。
+ * 参数说明：{@code parameter} 作为滤波强度 h 的基准值（针对 8 位图）。
+ * 对于 16 位图，会根据图像实际最大值自动缩放 h。
+ * 搜索半径固定为 15，块半径固定为 3。
  * </p>
  */
 public final class NlmDenoiser implements ImageDenoiser {
@@ -26,42 +23,54 @@ public final class NlmDenoiser implements ImageDenoiser {
 
     @Override
     public ImagePlus denoise(ImagePlus image, double parameter) {
-        // ----- 参数校验 -----
         if (image == null) {
             throw new IllegalArgumentException("输入图像不能为 null。");
         }
         if (!Double.isFinite(parameter) || parameter <= 0.0) {
             throw new IllegalArgumentException("NLM 参数 (h) 必须是大于 0 的有限数字。");
         }
-        float h = (float) parameter;
-        int searchRadius = 15; // 固定，可提供较好降噪效果
+
+        // 获取第一帧的位深度和最大值（用于参数缩放）
+        ImageProcessor firstIp = image.getProcessor();
+        int bitDepth = firstIp.getBitDepth();
+        double maxVal = firstIp.getMax();
+        double scale = 1.0;
+        if (bitDepth == 16 && maxVal > 0) {
+            scale = maxVal / 255.0;
+        } else if (bitDepth == 32) {
+            scale = maxVal / 255.0;
+        }
+        // 对参数进行缩放
+        float h = (float) (parameter * scale);
+        IJ.log("NLM: 位深度=" + bitDepth + ", maxVal=" + maxVal + ", scale=" + scale + ", 实际h=" + h);
+
+        int searchRadius = 15;
         int blockRadius = 3;
 
-        // ----- 复制图像并准备处理 -----
         ImagePlus denoised = image.duplicate();
         denoised.setTitle(image.getTitle() + " - NLM Denoised");
-
         ImageStack stack = denoised.getStack();
         int totalSlices = stack.getSize();
 
-        // ----- 逐层处理 -----
         for (int slice = 1; slice <= totalSlices; slice++) {
-            ImageProcessor processor = stack.getProcessor(slice);
+            ImageProcessor ip = stack.getProcessor(slice);
 
-            // 转为 BufferedImage（若为彩色则转灰度）
-            BufferedImage srcBi = processor.getBufferedImage();
-            if (srcBi.getType() != BufferedImage.TYPE_BYTE_GRAY) {
-                srcBi = convertToGray(srcBi);
+            // 处理彩色（转为灰度）
+            if (ip instanceof ColorProcessor) {
+                ip = ((ColorProcessor) ip).convertToByteProcessor();
             }
 
-            // 执行 NLM 降噪
-            BufferedImage dstBi = denoiseGray(srcBi, h, searchRadius, blockRadius);
+            // 提取浮点数组
+            float[] src = extractFloatArray(ip);
+            float[] dst = new float[src.length];
+            int width = ip.getWidth(), height = ip.getHeight();
 
-            // 将结果写回 ImageProcessor
-            ImageProcessor resultProcessor = processor.createProcessor(dstBi.getWidth(), dstBi.getHeight());
-            resultProcessor.setPixels(((DataBufferByte) dstBi.getRaster().getDataBuffer()).getData());
-            stack.setProcessor(resultProcessor, slice);
+            // 执行 NLM
+            denoiseFloat(src, dst, width, height, h, searchRadius, blockRadius);
 
+            // 写回 ImageProcessor（保留原始位深度）
+            ImageProcessor result = createProcessorFromFloatArray(dst, width, height, bitDepth);
+            stack.setProcessor(result, slice);
             IJ.showProgress(slice, totalSlices);
         }
 
@@ -69,19 +78,65 @@ public final class NlmDenoiser implements ImageDenoiser {
         return denoised;
     }
 
-    // ============================================================
-    //  私有 NLM 算法实现（移植自原 GrayNLMDemo）
-    // ============================================================
+    // 提取 float[]（兼容 8/16/32 位）
+    private float[] extractFloatArray(ImageProcessor ip) {
+        if (ip instanceof ByteProcessor) {
+            byte[] bytes = (byte[]) ip.getPixels();
+            float[] result = new float[bytes.length];
+            for (int i = 0; i < bytes.length; i++) {
+                result[i] = bytes[i] & 0xFF;
+            }
+            return result;
+        } else if (ip instanceof ShortProcessor) {
+            short[] shorts = (short[]) ip.getPixels();
+            float[] result = new float[shorts.length];
+            for (int i = 0; i < shorts.length; i++) {
+                result[i] = shorts[i] & 0xFFFF;
+            }
+            return result;
+        } else if (ip instanceof FloatProcessor) {
+            return (float[]) ip.getPixels();
+        } else {
+            throw new IllegalArgumentException("不支持的图像类型: " + ip.getClass().getName());
+        }
+    }
 
-    /**
-     * 对灰度 BufferedImage 执行 NLM 降噪。
-     */
-    private BufferedImage denoiseGray(BufferedImage input, float h, int searchRadius, int blockRadius) {
-        int width = input.getWidth();
-        int height = input.getHeight();
-        float[] src = bufferedImageToFloatArray(input);
-        float[] dst = new float[src.length];
+    // 从 float[] 创建对应位深度的 ImageProcessor
+    private ImageProcessor createProcessorFromFloatArray(float[] data, int width, int height, int bitDepth) {
+        if (bitDepth == 8) {
+            byte[] bytes = new byte[data.length];
+            for (int i = 0; i < data.length; i++) {
+                int val = Math.round(data[i]);
+                if (val < 0) val = 0;
+                if (val > 255) val = 255;
+                bytes[i] = (byte) val;
+            }
+            ByteProcessor bp = new ByteProcessor(width, height);
+            bp.setPixels(bytes);
+            return bp;
+        } else if (bitDepth == 16) {
+            short[] shorts = new short[data.length];
+            for (int i = 0; i < data.length; i++) {
+                int val = Math.round(data[i]);
+                if (val < 0) val = 0;
+                if (val > 65535) val = 65535;
+                shorts[i] = (short) val;
+            }
+            ShortProcessor sp = new ShortProcessor(width, height);
+            sp.setPixels(shorts);
+            return sp;
+        } else if (bitDepth == 32) {
+            FloatProcessor fp = new FloatProcessor(width, height);
+            fp.setPixels(data);
+            return fp;
+        } else {
+            throw new IllegalArgumentException("不支持的位深度: " + bitDepth);
+        }
+    }
 
+    // 通用 NLM 浮点实现
+    private void denoiseFloat(float[] src, float[] dst, int width, int height,
+                              float h, int searchRadius, int blockRadius) {
         for (int y = 0; y < height; y++) {
             for (int x = 0; x < width; x++) {
                 int idx = y * width + x;
@@ -105,12 +160,8 @@ public final class NlmDenoiser implements ImageDenoiser {
                 dst[idx] = sumPixels / sumWeights;
             }
         }
-        return floatArrayToBufferedImage(dst, width, height);
     }
 
-    /**
-     * 计算两个图像块之间的欧氏距离（归一化平方和）。
-     */
     private float computeBlockDistance(float[] img, int w, int h,
                                        int x1, int y1, int x2, int y2, int blockRadius) {
         float sum = 0f;
@@ -130,47 +181,5 @@ public final class NlmDenoiser implements ImageDenoiser {
             }
         }
         return count > 0 ? sum / count : 0f;
-    }
-
-    // ============================================================
-    //  辅助转换方法
-    // ============================================================
-
-    /**
-     * 将灰度 BufferedImage 转换为 float 数组 (0~255)。
-     */
-    private float[] bufferedImageToFloatArray(BufferedImage bi) {
-        int w = bi.getWidth(), h = bi.getHeight();
-        byte[] data = ((DataBufferByte) bi.getRaster().getDataBuffer()).getData();
-        float[] result = new float[w * h];
-        for (int i = 0; i < data.length; i++) {
-            result[i] = data[i] & 0xFF;
-        }
-        return result;
-    }
-
-    /**
-     * 将 float 数组转换为灰度 BufferedImage（值限幅至 0~255）。
-     */
-    private BufferedImage floatArrayToBufferedImage(float[] data, int w, int h) {
-        byte[] pixels = new byte[w * h];
-        for (int i = 0; i < data.length; i++) {
-            int val = Math.round(data[i]);
-            if (val < 0) val = 0;
-            if (val > 255) val = 255;
-            pixels[i] = (byte) val;
-        }
-        BufferedImage bi = new BufferedImage(w, h, BufferedImage.TYPE_BYTE_GRAY);
-        bi.getRaster().setDataElements(0, 0, w, h, pixels);
-        return bi;
-    }
-
-    /**
-     * 将彩色 BufferedImage 转为灰度。
-     */
-    private BufferedImage convertToGray(BufferedImage color) {
-        BufferedImage gray = new BufferedImage(color.getWidth(), color.getHeight(), BufferedImage.TYPE_BYTE_GRAY);
-        gray.getGraphics().drawImage(color, 0, 0, null);
-        return gray;
     }
 }
