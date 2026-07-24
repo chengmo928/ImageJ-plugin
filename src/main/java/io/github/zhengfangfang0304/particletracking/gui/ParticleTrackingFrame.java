@@ -1791,7 +1791,23 @@ public final class ParticleTrackingFrame extends JFrame {
                 denoiser =
                         new MedianDenoiser();
 
-            } else {
+            } 
+            else if (method.contains("Bilateral")) {
+            
+                denoiser = 
+                       new BilateralDenoiser();
+        } 
+            else if (method.contains("NLM")) {
+            
+                denoiser = 
+                         new NlmDenoiser();
+        } 
+            else if (method.contains("Wavelet")) {
+            
+                denoiser = 
+                        new WaveletDenoiser();
+            }
+            else {
 
                 denoiser =
                         new GaussianDenoiser();
