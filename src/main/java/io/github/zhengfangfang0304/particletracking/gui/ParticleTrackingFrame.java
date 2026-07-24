@@ -7,6 +7,9 @@ import io.github.zhengfangfang0304.particletracking.model.Track;
 import io.github.zhengfangfang0304.particletracking.preprocessing.GaussianDenoiser;
 import io.github.zhengfangfang0304.particletracking.preprocessing.ImageDenoiser;
 import io.github.zhengfangfang0304.particletracking.preprocessing.MedianDenoiser;
+import io.github.zhengfangfang0304.particletracking.preprocessing.BilateralDenoiser;
+import io.github.zhengfangfang0304.particletracking.preprocessing.NlmDenoiser;
+import io.github.zhengfangfang0304.particletracking.preprocessing.WaveletDenoiser;
 import io.github.zhengfangfang0304.particletracking.detection.CentroidDetector;
 import io.github.zhengfangfang0304.particletracking.detection.DetectionParameters;
 import io.github.zhengfangfang0304.particletracking.detection.LocalMaximumDetector;
@@ -239,7 +242,10 @@ public final class ParticleTrackingFrame extends JFrame {
                 new JComboBox<>(
                         new String[]{
                                 "Gaussian Blur 高斯滤波",
-                                "Median Filter 中值滤波"
+                                "Median Filter 中值滤波"，
+                                "Bilateral Filter 双边滤波",
+                                "NLM 非局部均值",
+                                "Wavelet Denoise 小波降噪"
                         }
                 );
 
